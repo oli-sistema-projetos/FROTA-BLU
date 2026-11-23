@@ -4,33 +4,43 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Mapping
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Connection, URL, make_url
+from sqlalchemy.exc import IntegrityError
 
+
+load_dotenv()
 
 DATABASE_PATH = Path(os.environ.get("CARRETAS_DB", Path(__file__).with_name("carretas.db")))
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+if DATABASE_URL:
+    database_url: URL = make_url(DATABASE_URL)
+    if database_url.drivername in ("postgres", "postgresql"):
+        database_url = database_url.set(drivername="postgresql+psycopg")
+    if database_url.get_backend_name() == "postgresql" and "sslmode" not in database_url.query:
+        database_url = database_url.update_query_dict({"sslmode": "require"})
+    engine = create_engine(database_url, pool_pre_ping=True)
+else:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sqlite_url = "sqlite:///" + DATABASE_PATH.resolve().as_posix()
+    engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 
 @contextmanager
 def database():
-    connection = sqlite3.connect(DATABASE_PATH)
-    connection.row_factory = sqlite3.Row
-    try:
+    with engine.begin() as connection:
         yield connection
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
-    finally:
-        connection.close()
 
 
 def initialize_database():
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database() as connection:
-        connection.execute(
+        connection.exec_driver_sql(
             """
             CREATE TABLE IF NOT EXISTS trailers (
                 id TEXT PRIMARY KEY,
@@ -43,6 +53,54 @@ def initialize_database():
                 "createdAt" TEXT NOT NULL
             )
             """
+        )
+        if engine.dialect.name == "postgresql":
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS app_migrations (
+                    key TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )
+                """
+            )
+
+
+def migrate_legacy_sqlite_data():
+    if engine.dialect.name != "postgresql" or not DATABASE_PATH.is_file():
+        return
+
+    with sqlite3.connect(DATABASE_PATH) as local_connection:
+        exists = local_connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trailers'"
+        ).fetchone()
+        if not exists:
+            return
+        local_connection.row_factory = sqlite3.Row
+        legacy_rows = local_connection.execute("SELECT * FROM trailers").fetchall()
+
+    with database() as connection:
+        already_migrated = connection.execute(
+            text("SELECT key FROM app_migrations WHERE key = :key"),
+            {"key": "sqlite-trailers-v1"}
+        ).first()
+        if already_migrated:
+            return
+        for row in legacy_rows:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO trailers
+                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt")
+                    VALUES
+                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt)
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                dict(row)
+            )
+        connection.execute(
+            text("INSERT INTO app_migrations (key, applied_at) VALUES (:key, :applied_at) ON CONFLICT DO NOTHING"),
+            {"key": "sqlite-trailers-v1", "applied_at": datetime.now(timezone.utc).isoformat()}
         )
 
 
@@ -71,25 +129,26 @@ class TrailerUpdate(BaseModel):
     reason: str | None = Field(default=None, max_length=100)
 
 
-def trailer_dict(row: sqlite3.Row) -> dict:
+def trailer_dict(row: Mapping) -> dict:
     return dict(row)
 
 
 initialize_database()
+migrate_legacy_sqlite_data()
 app = FastAPI(title="FROTA BLU-GASPAR", version="1.0.0")
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "database": engine.dialect.name}
 
 
 @app.get("/api/trailers")
 def list_trailers():
     with database() as connection:
         rows = connection.execute(
-            'SELECT * FROM trailers ORDER BY "createdAt" DESC, plate ASC'
-        ).fetchall()
+            text('SELECT * FROM trailers ORDER BY "createdAt" DESC, plate ASC')
+        ).mappings().all()
     return [trailer_dict(row) for row in rows]
 
 
@@ -116,16 +175,18 @@ def create_trailer(payload: TrailerCreate):
     try:
         with database() as connection:
             connection.execute(
-                """
-                INSERT INTO trailers
-                    (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt")
-                VALUES
-                    (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt)
-                """,
+                text(
+                    """
+                    INSERT INTO trailers
+                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt")
+                    VALUES
+                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt)
+                    """
+                ),
                 trailer
             )
-    except sqlite3.IntegrityError as error:
-        if "plate" in str(error).lower():
+    except IntegrityError as error:
+        if "plate" in str(error.orig).lower():
             raise HTTPException(status_code=409, detail="Já existe uma carreta cadastrada com esta placa.") from error
         raise
     return trailer
@@ -139,7 +200,10 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate):
     if any(changes.get(key) is None for key in ("loadStatus", "location", "situation") if key in changes):
         raise HTTPException(status_code=422, detail="Status, local e situação não podem ficar vazios.")
     with database() as connection:
-        row = connection.execute("SELECT * FROM trailers WHERE id = ?", (trailer_id,)).fetchone()
+        row = connection.execute(
+            text("SELECT * FROM trailers WHERE id = :id"),
+            {"id": trailer_id}
+        ).mappings().first()
         if row is None:
             raise HTTPException(status_code=404, detail="Carreta não encontrada.")
         current = trailer_dict(row)
@@ -164,19 +228,25 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate):
             "situation": updated["situation"],
             "reason": updated["reason"]
         }
-        assignments = ", ".join(f'"{name}" = ?' for name in columns)
+        assignments = ", ".join(f'"{name}" = :{name}' for name in columns)
         connection.execute(
-            f"UPDATE trailers SET {assignments} WHERE id = ?",
-            (*columns.values(), trailer_id)
+            text(f"UPDATE trailers SET {assignments} WHERE id = :id"),
+            {**columns, "id": trailer_id}
         )
-        result = connection.execute("SELECT * FROM trailers WHERE id = ?", (trailer_id,)).fetchone()
+        result = connection.execute(
+            text("SELECT * FROM trailers WHERE id = :id"),
+            {"id": trailer_id}
+        ).mappings().first()
     return trailer_dict(result)
 
 
 @app.delete("/api/trailers/{trailer_id}", status_code=204)
 def delete_trailer(trailer_id: str):
     with database() as connection:
-        cursor = connection.execute("DELETE FROM trailers WHERE id = ?", (trailer_id,))
-        if cursor.rowcount == 0:
+        result = connection.execute(
+            text("DELETE FROM trailers WHERE id = :id"),
+            {"id": trailer_id}
+        )
+        if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Carreta não encontrada.")
     return Response(status_code=204)

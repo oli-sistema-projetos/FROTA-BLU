@@ -1,6 +1,6 @@
 # FROTA BLU-GASPAR
 
-Aplicação em React com API Python/FastAPI e banco SQLite local.
+Aplicação em React com API Python/FastAPI. Usa SQLite local por padrão e pode conectar ao PostgreSQL do Supabase.
 
 ## Executar no Windows
 
@@ -10,6 +10,15 @@ Instale as dependências uma vez:
 python -m pip install -r requirements.txt
 npm install
 ```
+
+## Conectar ao Supabase
+
+1. Copie `.env.example` para `.env` (`Copy-Item .env.example .env` no PowerShell).
+2. No Supabase, abra **Project Settings → Database** e obtenha a senha do banco.
+3. Substitua `YOUR_DATABASE_PASSWORD` em `.env` pela senha real. Não envie essa senha pelo chat nem a publique no GitHub. Se ela tiver caracteres especiais, use o formato URL-encoded.
+4. Reinicie a API. Ela cria a tabela necessária e, na primeira conexão ao PostgreSQL, importa os registros existentes do SQLite sem apagar o arquivo local.
+
+O projeto Supabase usado é `oefnumrrldrgqfeyobha`. A chave publishable não é necessária na aplicação: o backend acessa o PostgreSQL diretamente, mantendo a senha apenas no servidor. O comando de conexão abaixo não requer `supabase login`, `supabase init` ou `supabase link`.
 
 Abra dois terminais no diretório do projeto. No primeiro, inicie a API:
 

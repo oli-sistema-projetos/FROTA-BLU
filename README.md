@@ -36,6 +36,10 @@ Abra o endereço exibido pelo Vite, normalmente `http://localhost:5173`.
 
 Os registros são salvos em `backend\carretas.db`. Os cards contam apenas os cadastros feitos no dia e zeram à meia-noite no horário local; as carretas continuam na lista e no banco. A API também pode ser consultada em `http://localhost:8000/docs`.
 
+## Publicar no Vercel
+
+O `vercel.json` configura o preset FastAPI e compila a interface React. No projeto do Vercel, adicione a variável de ambiente `DATABASE_URL` para **Production** e **Preview**, usando a URL PostgreSQL do Session Pooler IPv4 do Supabase com a senha do banco. Não use a chave publishable como senha. Depois, faça um novo deploy. A aplicação em produção exige essa variável para não tentar gravar em um SQLite temporário.
+
 ## Compartilhar o resumo diário pelo WhatsApp
 
 Clique em **Resumo do dia** para gerar uma imagem PNG com os indicadores e os detalhes somente das carretas bloqueadas. Em dispositivos compatíveis, **Compartilhar no WhatsApp** abre a janela de compartilhamento do aparelho; escolha o WhatsApp e o contato para enviar a imagem junto com o texto. Se o compartilhamento de arquivos não estiver disponível, o sistema baixa a imagem e abre o WhatsApp com o texto preenchido; anexe o PNG baixado antes de enviar.

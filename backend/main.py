@@ -19,6 +19,9 @@ load_dotenv()
 DATABASE_PATH = Path(os.environ.get("CARRETAS_DB", Path(__file__).with_name("carretas.db")))
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
+if os.environ.get("VERCEL") == "1" and not DATABASE_URL:
+    raise RuntimeError("Configure DATABASE_URL nas variáveis de ambiente do Vercel.")
+
 if DATABASE_URL:
     database_url: URL = make_url(DATABASE_URL)
     if database_url.drivername in ("postgres", "postgresql"):

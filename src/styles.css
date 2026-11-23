@@ -114,8 +114,28 @@ tbody tr:hover { background: #f8fbfd; }
 .summary-image-wrap { max-height: 38vh; margin: 0 23px; overflow: auto; background: #f2f5f8; border: 1px solid var(--line); border-radius: 10px; }
 .summary-image { display: block; width: 100%; height: auto; }
 .summary-message { max-height: 128px; margin: 14px 23px 0; padding: 11px 12px; overflow: auto; color: #4f6275; background: #f5f7f9; border-radius: 9px; font-family: inherit; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.summary-send-row { display: flex; justify-content: flex-start; margin-top: 12px; padding: 0 23px; }
-.send-icon-button { width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 21px; line-height: 1; }
+.summary-modal { position: relative; }
+.summary-send-row {
+  position: absolute;
+  z-index: 3;
+  right: 23px;
+  bottom: 79px;
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 0;
+}
+.send-icon-button {
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 8px 22px rgba(20, 132, 93, .38);
+  font-size: 22px;
+  line-height: 1;
+}
 .summary-actions { flex-wrap: wrap; margin-top: 16px; padding: 15px 23px 22px; }
 .download-summary { text-decoration: none; }
 .whatsapp-button { color: #fff; background: #16845d; }

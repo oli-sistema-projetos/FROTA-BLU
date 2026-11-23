@@ -1,13 +1,16 @@
 import os
 import sqlite3
+import secrets
 import uuid
+import hmac
+import hashlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Mapping
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, URL, make_url
@@ -53,10 +56,66 @@ def initialize_database():
                 "dockNumber" TEXT NOT NULL DEFAULT '',
                 situation TEXT NOT NULL CHECK (situation IN ('Liberada', 'Bloqueada')),
                 reason TEXT NOT NULL DEFAULT '',
+                "createdAt" TEXT NOT NULL,
+                "createdById" TEXT NOT NULL DEFAULT '',
+                "createdByName" TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS app_users (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                username TEXT NOT NULL UNIQUE,
+                "passwordHash" TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('admin', 'operador')),
                 "createdAt" TEXT NOT NULL
             )
             """
         )
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS app_sessions (
+                token TEXT PRIMARY KEY,
+                "userId" TEXT NOT NULL,
+                "createdAt" TEXT NOT NULL,
+                "expiresAt" TEXT NOT NULL
+            )
+            """
+        )
+        if engine.dialect.name == "sqlite":
+            trailer_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(trailers)").all()
+            }
+            if "createdById" not in trailer_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "createdById" TEXT NOT NULL DEFAULT \'\''
+                )
+            if "createdByName" not in trailer_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "createdByName" TEXT NOT NULL DEFAULT \'\''
+                )
+        else:
+            existing_columns = {
+                row[0] for row in connection.execute(
+                    text(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_name = 'trailers'
+                        """
+                    )
+                ).all()
+            }
+            if "createdById" not in existing_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "createdById" TEXT NOT NULL DEFAULT \'\''
+                )
+            if "createdByName" not in existing_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "createdByName" TEXT NOT NULL DEFAULT \'\''
+                )
         if engine.dialect.name == "postgresql":
             connection.exec_driver_sql(
                 """
@@ -132,6 +191,80 @@ class TrailerUpdate(BaseModel):
     reason: str | None = Field(default=None, max_length=100)
 
 
+class AuthSetup(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    username: str = Field(min_length=3, max_length=40)
+    password: str = Field(min_length=6, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("O usuário é obrigatório.")
+        return normalized
+
+
+class AuthLogin(BaseModel):
+    username: str = Field(min_length=3, max_length=40)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AuthUserCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    username: str = Field(min_length=3, max_length=40)
+    password: str = Field(min_length=6, max_length=128)
+    role: Literal["admin", "operador"] = "operador"
+
+
+def password_hash(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000).hex()
+    return f"pbkdf2_sha256${salt}${digest}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        algorithm, salt, expected = stored.split("$", 2)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000).hex()
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, AttributeError):
+        return False
+
+
+def session_token(request: Request, authorization: str | None) -> str | None:
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip() or None
+    cookie_token = request.cookies.get("frota_session")
+    return cookie_token or None
+
+
+def current_user(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> Mapping:
+    token = session_token(request, authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail="Faça login para continuar.")
+    with database() as connection:
+        session = connection.execute(
+            text(
+                """
+                SELECT u.id, u.name, u.username, u.role
+                FROM app_sessions s
+                JOIN app_users u ON u.id = s."userId"
+                WHERE s.token = :token AND s."expiresAt" > :now
+                """
+            ),
+            {"token": token, "now": datetime.now(timezone.utc).isoformat()},
+        ).mappings().first()
+    if session is None:
+        raise HTTPException(status_code=401, detail="Sua sessão expirou. Faça login novamente.")
+    return session
+
+
 def trailer_dict(row: Mapping) -> dict:
     return dict(row)
 
@@ -139,6 +272,142 @@ def trailer_dict(row: Mapping) -> dict:
 initialize_database()
 migrate_legacy_sqlite_data()
 app = FastAPI(title="FROTA BLU-GASPAR", version="1.0.0")
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    with database() as connection:
+        user_count = connection.execute(text("SELECT COUNT(*) AS count FROM app_users")).mappings().first()["count"]
+    return {"needsSetup": user_count == 0}
+
+
+@app.post("/api/auth/setup")
+def auth_setup(payload: AuthSetup, response: Response):
+    with database() as connection:
+        user_count = connection.execute(text("SELECT COUNT(*) AS count FROM app_users")).mappings().first()["count"]
+        if user_count:
+            raise HTTPException(status_code=409, detail="A configuração inicial já foi concluída.")
+        username = payload.username.strip().lower()
+        if connection.execute(text("SELECT id FROM app_users WHERE username = :username"), {"username": username}).first():
+            raise HTTPException(status_code=409, detail="Este usuário já existe.")
+        user = {
+            "id": str(uuid.uuid4()),
+            "name": payload.name.strip(),
+            "username": username,
+            "passwordHash": password_hash(payload.password),
+            "role": "admin",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+        connection.execute(
+            text(
+                """
+                INSERT INTO app_users (id, name, username, "passwordHash", role, "createdAt")
+                VALUES (:id, :name, :username, :passwordHash, :role, :createdAt)
+                """
+            ),
+            user,
+        )
+    return login_session(user["id"], user["name"], user["username"], user["role"], response)
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: AuthLogin, response: Response):
+    with database() as connection:
+        user = connection.execute(
+            text("SELECT * FROM app_users WHERE username = :username"),
+            {"username": payload.username.strip().lower()},
+        ).mappings().first()
+    if user is None or not verify_password(payload.password, user["passwordHash"]):
+        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos.")
+    return login_session(user["id"], user["name"], user["username"], user["role"], response)
+
+
+def login_session(user_id: str, name: str, username: str, role: str, response: Response) -> dict:
+    token = secrets.token_urlsafe(48)
+    created_at = datetime.now(timezone.utc)
+    expires_at = created_at.timestamp() + (12 * 60 * 60)
+    expires_iso = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
+    with database() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO app_sessions (token, "userId", "createdAt", "expiresAt")
+                VALUES (:token, :userId, :createdAt, :expiresAt)
+                """
+            ),
+            {
+                "token": token,
+                "userId": user_id,
+                "createdAt": created_at.isoformat(),
+                "expiresAt": expires_iso,
+            },
+        )
+    response.set_cookie(
+        "frota_session",
+        token,
+        httponly=True,
+        secure=bool(os.environ.get("VERCEL")),
+        samesite="lax",
+        max_age=12 * 60 * 60,
+    )
+    return {"token": token, "user": {"id": user_id, "name": name, "username": username, "role": role}}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(response: Response, request: Request, authorization: str | None = Header(default=None)):
+    token = session_token(request, authorization)
+    if token:
+        with database() as connection:
+            connection.execute(text("DELETE FROM app_sessions WHERE token = :token"), {"token": token})
+    response.delete_cookie("frota_session")
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/me")
+def auth_me(user: Mapping = Depends(current_user)):
+    return {"id": user["id"], "name": user["name"], "username": user["username"], "role": user["role"]}
+
+
+@app.get("/api/auth/users")
+def list_users(user: Mapping = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem listar usuários.")
+    with database() as connection:
+        rows = connection.execute(
+            text('SELECT id, name, username, role, "createdAt" FROM app_users ORDER BY name ASC')
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/auth/users", status_code=201)
+def create_user(payload: AuthUserCreate, user: Mapping = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem criar usuários.")
+    with database() as connection:
+        existing = connection.execute(
+            text("SELECT id FROM app_users WHERE username = :username"),
+            {"username": payload.username.strip().lower()},
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Este usuário já existe.")
+        created = {
+            "id": str(uuid.uuid4()),
+            "name": payload.name.strip(),
+            "username": payload.username.strip().lower(),
+            "passwordHash": password_hash(payload.password),
+            "role": payload.role,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+        connection.execute(
+            text(
+                """
+                INSERT INTO app_users (id, name, username, "passwordHash", role, "createdAt")
+                VALUES (:id, :name, :username, :passwordHash, :role, :createdAt)
+                """
+            ),
+            created,
+        )
+    return {"id": created["id"], "name": created["name"], "username": created["username"], "role": created["role"]}
 
 
 @app.get("/api/health")
@@ -156,7 +425,7 @@ def list_trailers():
 
 
 @app.post("/api/trailers", status_code=201)
-def create_trailer(payload: TrailerCreate):
+def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)):
     data = payload.model_dump()
     dock_number = (data["dockNumber"] or "").strip() if data["location"] == "Doca" else ""
     reason = (data["reason"] or "").strip() if data["situation"] == "Bloqueada" else ""
@@ -173,7 +442,9 @@ def create_trailer(payload: TrailerCreate):
         "dockNumber": dock_number,
         "situation": data["situation"],
         "reason": reason,
-        "createdAt": datetime.now(timezone.utc).isoformat()
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdById": user["id"],
+        "createdByName": user["name"],
     }
     try:
         with database() as connection:
@@ -181,9 +452,9 @@ def create_trailer(payload: TrailerCreate):
                 text(
                     """
                     INSERT INTO trailers
-                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt")
+                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt", "createdById", "createdByName")
                     VALUES
-                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt)
+                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt, :createdById, :createdByName)
                     """
                 ),
                 trailer
@@ -196,7 +467,7 @@ def create_trailer(payload: TrailerCreate):
 
 
 @app.patch("/api/trailers/{trailer_id}")
-def update_trailer(trailer_id: str, payload: TrailerUpdate):
+def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depends(current_user)):
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=400, detail="Informe ao menos um campo para atualizar.")
@@ -244,7 +515,7 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate):
 
 
 @app.delete("/api/trailers/{trailer_id}", status_code=204)
-def delete_trailer(trailer_id: str):
+def delete_trailer(trailer_id: str, user: Mapping = Depends(current_user)):
     with database() as connection:
         result = connection.execute(
             text("DELETE FROM trailers WHERE id = :id"),

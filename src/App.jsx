@@ -10,8 +10,13 @@ const EMPTY_FORM = {
 };
 
 async function request(path, options) {
+  const token = localStorage.getItem("frota_auth_token");
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options?.headers
+    },
     ...options
   });
   if (!response.ok) {
@@ -267,7 +272,129 @@ function Modal({ dialog, form, setForm, onClose, onSubmit, busy }) {
   );
 }
 
+function AuthScreen({ needsSetup, onAuthenticated }) {
+  const [form, setForm] = useState({
+    name: "",
+    username: "",
+    password: ""
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function update(field, value) {
+    setForm(current => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await request(
+        needsSetup ? "/api/auth/setup" : "/api/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify(
+            needsSetup
+              ? form
+              : { username: form.username, password: form.password }
+          )
+        }
+      );
+      localStorage.setItem("frota_auth_token", result.token);
+      onAuthenticated(result.user);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="auth-brand"><span className="brand-icon"><Icon name="truck" size={27} /></span><div><span className="eyebrow">OPERAÇÃO · TEMPO REAL</span><h1>FROTA BLU-GASPAR</h1></div></div>
+        <h2>{needsSetup ? "Criar primeiro usuário" : "Entrar no sistema"}</h2>
+        <p>{needsSetup ? "Este usuário será administrador e poderá criar novos operadores." : "Use seu usuário e senha para continuar."}</p>
+        <form onSubmit={submit}>
+          {needsSetup && <div className="field"><label htmlFor="auth-name">Nome completo</label><input id="auth-name" required minLength={2} value={form.name} onChange={event => update("name", event.target.value)} /></div>}
+          <div className="field"><label htmlFor="auth-username">Usuário</label><input id="auth-username" required minLength={3} autoComplete="username" value={form.username} onChange={event => update("username", event.target.value)} /></div>
+          <div className="field"><label htmlFor="auth-password">Senha</label><input id="auth-password" required minLength={needsSetup ? 6 : 1} type="password" autoComplete={needsSetup ? "new-password" : "current-password"} value={form.password} onChange={event => update("password", event.target.value)} /></div>
+          {error && <div className="error-banner auth-error" role="alert">{error}</div>}
+          <button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Aguarde..." : needsSetup ? "Criar administrador" : "Entrar"}</button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function UsersDialog({ open, onClose }) {
+  const [users, setUsers] = useState([]);
+  const [form, setForm] = useState({ name: "", username: "", password: "", role: "operador" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    request("/api/auth/users")
+      .then(setUsers)
+      .catch(requestError => setError(requestError.message));
+  }, [open]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const created = await request("/api/auth/users", {
+        method: "POST",
+        body: JSON.stringify(form)
+      });
+      setUsers(current => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm({ name: "", username: "", password: "", role: "operador" });
+      setNotice(`Usuário ${created.username} criado.`);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) return null;
+  return (
+    <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+      <section className="modal users-modal" role="dialog" aria-modal="true" aria-labelledby="users-title">
+        <header className="modal-header">
+          <div><h2 id="users-title">Usuários</h2><p>Cadastre operadores e administradores.</p></div>
+          <button className="close-button" type="button" aria-label="Fechar" onClick={onClose}><Icon name="close" /></button>
+        </header>
+        <div className="users-content">
+          <form className="users-form" onSubmit={submit}>
+            <div className="field"><label htmlFor="new-user-name">Nome</label><input id="new-user-name" required minLength={2} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></div>
+            <div className="form-grid">
+              <div className="field"><label htmlFor="new-user-username">Usuário</label><input id="new-user-username" required minLength={3} value={form.username} onChange={event => setForm(current => ({ ...current, username: event.target.value }))} /></div>
+              <div className="field"><label htmlFor="new-user-password">Senha</label><input id="new-user-password" required minLength={6} type="password" value={form.password} onChange={event => setForm(current => ({ ...current, password: event.target.value }))} /></div>
+            </div>
+            <div className="field"><label htmlFor="new-user-role">Perfil</label><select id="new-user-role" value={form.role} onChange={event => setForm(current => ({ ...current, role: event.target.value }))}><option value="operador">Operador</option><option value="admin">Administrador</option></select></div>
+            {error && <div className="error-banner users-error" role="alert">{error}</div>}
+            {notice && <p className="users-notice" role="status">{notice}</p>}
+            <footer className="modal-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Criando..." : "Criar usuário"}</button></footer>
+          </form>
+          <div className="users-list">
+            {users.map(user => <div className="user-row" key={user.id}><span><strong>{user.name}</strong><small>{user.username}</small></span><span className={`badge ${user.role === "admin" ? "blocked" : "free"}`}>{user.role}</span></div>)}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [trailers, setTrailers] = useState([]);
   const [activeFilter, setActiveFilter] = useState("Todas");
   const [search, setSearch] = useState("");
@@ -280,6 +407,29 @@ export default function App() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [today, setToday] = useState(() => localDateKey(new Date()));
   const [summary, setSummary] = useState(null);
+  const [usersDialog, setUsersDialog] = useState(false);
+
+  useEffect(() => {
+    async function initializeAuth() {
+      try {
+        const status = await request("/api/auth/status");
+        setNeedsSetup(status.needsSetup);
+        if (!status.needsSetup) {
+          try {
+            setAuthUser(await request("/api/auth/me"));
+          } catch {
+            localStorage.removeItem("frota_auth_token");
+            setAuthUser(null);
+          }
+        }
+      } catch (requestError) {
+        setError(requestError.message);
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+    initializeAuth();
+  }, []);
 
   useEffect(() => {
     const imageUrl = summary?.url;
@@ -300,7 +450,9 @@ export default function App() {
     }
   }
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    if (authUser) refresh();
+  }, [authUser]);
 
   useEffect(() => {
     let midnightTimer;
@@ -476,6 +628,24 @@ export default function App() {
   const filters = ["Todas", "Carregada", "Vazia", "Bloqueada"];
   const hasBlockedTrailers = trailers.some(item => item.situation === "Bloqueada");
 
+  async function logout() {
+    try {
+      await request("/api/auth/logout", { method: "POST", body: "{}" });
+    } catch {
+      // Limpa a sessão local mesmo se a API estiver temporariamente indisponível.
+    }
+    localStorage.removeItem("frota_auth_token");
+    setAuthUser(null);
+  }
+
+  if (authLoading) {
+    return <main className="auth-page"><section className="auth-card"><p>Carregando...</p></section></main>;
+  }
+
+  if (!authUser) {
+    return <AuthScreen needsSetup={needsSetup} onAuthenticated={setAuthUser} />;
+  }
+
   return (
     <main className="page">
       <header className="topbar">
@@ -493,6 +663,8 @@ export default function App() {
           >
             📤
           </button>
+          {authUser.role === "admin" && <button className="button button-share" type="button" onClick={() => setUsersDialog(true)}>Usuários</button>}
+          <button className="button button-share user-button" type="button" title="Sair" onClick={logout}><span>{authUser.name}</span></button>
           <button className="button button-accent" type="button" onClick={openNew}><Icon name="plus" /> + Nova Carreta</button>
         </div>
       </header>
@@ -532,13 +704,14 @@ export default function App() {
         {error && <div className="error-banner" role="alert">{error}</div>}
         <div className="table-wrap">
           <table>
-            <thead><tr><th scope="col">Placa</th><th scope="col">Status da carga</th><th scope="col">Local</th><th scope="col">Situação</th><th scope="col">Ações rápidas</th></tr></thead>
+            <thead><tr><th scope="col">Placa</th><th scope="col">Status da carga</th><th scope="col">Local</th><th scope="col">Situação</th><th scope="col">Cadastrada por</th><th scope="col">Ações rápidas</th></tr></thead>
             <tbody>
               {visibleTrailers.map(trailer => <tr key={trailer.id}>
                 <td><span className="plate">{trailer.plate}</span><span className="subtext">Entrada {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(trailer.createdAt))}</span></td>
                 <td><span className={`badge ${trailer.loadStatus === "Carregada" ? "loaded" : "empty"}`}>{trailer.loadStatus}</span></td>
                 <td className="location"><span className="location-icon"><Icon name="pin" size={15} /></span>{trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio"}</td>
                 <td><span className={`badge ${trailer.situation === "Bloqueada" ? "blocked" : "free"}`}>{trailer.situation}</span>{trailer.situation === "Bloqueada" && trailer.reason && <span className="subtext reason">{trailer.reason}</span>}</td>
+                <td><span className="subtext creator-name">{trailer.createdByName || "Usuário não identificado"}</span></td>
                 <td><div className="actions">
                   <button className="icon-button" type="button" onClick={() => quickAction("load", trailer)}>{trailer.loadStatus === "Carregada" ? "Marcar vazia" : "Marcar carregada"}</button>
                   <button className="icon-button" type="button" onClick={() => quickAction("location", trailer)}>{trailer.location === "Doca" ? "Mover p/ pátio" : "Mover p/ doca"}</button>
@@ -552,6 +725,7 @@ export default function App() {
         </div>
       </section>
       <p className="message" role="status" aria-live="polite">{notice}</p>
+      {authUser.role === "admin" && <UsersDialog open={usersDialog} onClose={() => setUsersDialog(false)} />}
       <DailySummaryDialog summary={summary} onClose={() => setSummary(null)} onShare={shareDailySummary} />
       <Modal dialog={dialog} form={form} setForm={setForm} onClose={() => setDialog(null)} onSubmit={submitDialog} busy={busy} />
     </main>

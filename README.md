@@ -36,6 +36,12 @@ Abra o endereço exibido pelo Vite, normalmente `http://localhost:5173`.
 
 Os registros são salvos em `backend\carretas.db`. Os cards contam apenas os cadastros feitos no dia e zeram à meia-noite no horário local; as carretas continuam na lista e no banco. A API também pode ser consultada em `http://localhost:8000/docs`.
 
+## Usuários e responsável pelos cadastros
+
+No primeiro acesso, crie o usuário administrador. Depois, clique em **Usuários** no painel para cadastrar operadores ou outros administradores. Cada nova carreta registra automaticamente o nome do usuário autenticado; esse nome aparece na coluna **Cadastrada por** e nos dados da API.
+
+Todas as ações de cadastro, alteração e saída exigem login.
+
 ## Instalar como aplicativo (PWA)
 
 O FROTA BLU-GASPAR pode ser instalado pelo navegador em dispositivos compatíveis. Abra o endereço HTTPS do sistema e use a opção **Instalar aplicativo** do navegador; no celular, use **Adicionar à tela inicial**. A interface e os arquivos estáticos ficam disponíveis como shell offline, mas consultar ou alterar carretas exige conexão com a API e o banco de dados.

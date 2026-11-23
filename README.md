@@ -18,7 +18,7 @@ npm install
 3. Substitua `YOUR_DATABASE_PASSWORD` em `.env` pela senha real. Não envie essa senha pelo chat nem a publique no GitHub. Se ela tiver caracteres especiais, use o formato URL-encoded.
 4. Reinicie a API. Ela cria a tabela necessária e, na primeira conexão ao PostgreSQL, importa os registros existentes do SQLite sem apagar o arquivo local.
 
-O projeto Supabase usado é `oefnumrrldrgqfeyobha`. A chave publishable não é necessária na aplicação: o backend acessa o PostgreSQL diretamente, mantendo a senha apenas no servidor. O comando de conexão abaixo não requer `supabase login`, `supabase init` ou `supabase link`.
+O projeto Supabase usado é `oefnumrrldrgqfeyobha`. A URL de exemplo usa o Session Pooler IPv4 do projeto. A chave publishable não é necessária na aplicação: o backend acessa o PostgreSQL pelo servidor, mantendo a senha apenas no `.env` local. O comando de conexão não requer `supabase login`, `supabase init` ou `supabase link`.
 
 Abra dois terminais no diretório do projeto. No primeiro, inicie a API:
 

@@ -36,6 +36,10 @@ Abra o endereço exibido pelo Vite, normalmente `http://localhost:5173`.
 
 Os registros são salvos em `backend\carretas.db`. Os cards contam apenas os cadastros feitos no dia e zeram à meia-noite no horário local; as carretas continuam na lista e no banco. A API também pode ser consultada em `http://localhost:8000/docs`.
 
+## Instalar como aplicativo (PWA)
+
+O FROTA BLU-GASPAR pode ser instalado pelo navegador em dispositivos compatíveis. Abra o endereço HTTPS do sistema e use a opção **Instalar aplicativo** do navegador; no celular, use **Adicionar à tela inicial**. A interface e os arquivos estáticos ficam disponíveis como shell offline, mas consultar ou alterar carretas exige conexão com a API e o banco de dados.
+
 ## Publicar no Vercel
 
 O `vercel.json` configura o preset FastAPI e compila a interface React. No projeto do Vercel, adicione a variável de ambiente `DATABASE_URL` para **Production** e **Preview**, usando a URL PostgreSQL do Session Pooler IPv4 do Supabase com a senha do banco. Não use a chave publishable como senha. Depois, faça um novo deploy. A aplicação em produção exige essa variável para não tentar gravar em um SQLite temporário.

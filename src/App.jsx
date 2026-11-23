@@ -176,10 +176,20 @@ function DailySummaryDialog({ summary, onClose, onShare }) {
           <img className="summary-image" src={summary.url} alt="Resumo diário da FROTA BLU-GASPAR com indicadores e carretas bloqueadas" />
         </div>
         <pre className="summary-message">{summary.message}</pre>
+        <div className="summary-send-row">
+          <button
+            className="button whatsapp-button send-icon-button"
+            type="button"
+            aria-label="Compartilhar resumo no WhatsApp"
+            title="Compartilhar resumo no WhatsApp"
+            onClick={onShare}
+          >
+            📤
+          </button>
+        </div>
         <footer className="modal-actions summary-actions">
           <button className="button button-muted" type="button" onClick={onClose}>Fechar</button>
           <a className="button button-muted download-summary" href={summary.url} download={summary.filename}>Baixar imagem</a>
-          <button className="button whatsapp-button" type="button" onClick={onShare}><Icon name="share" /> Compartilhar no WhatsApp</button>
         </footer>
       </section>
     </div>

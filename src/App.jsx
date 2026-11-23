@@ -484,7 +484,15 @@ export default function App() {
           <div><span className="eyebrow">OPERAÇÃO · TEMPO REAL</span><h1>FROTA BLU-GASPAR</h1><p className="subtitle">Acompanhamento do pátio e das docas</p></div>
         </div>
         <div className="topbar-actions">
-          <button className="button button-share" type="button" onClick={openDailySummary}><Icon name="share" /> Resumo do dia</button>
+          <button
+            className="button button-share summary-icon-button"
+            type="button"
+            aria-label="Abrir resumo do dia"
+            title="Resumo do dia"
+            onClick={openDailySummary}
+          >
+            📤
+          </button>
           <button className="button button-accent" type="button" onClick={openNew}><Icon name="plus" /> + Nova Carreta</button>
         </div>
       </header>

@@ -39,6 +39,7 @@ h1 { margin: 0; color: #fff; font-size: clamp(24px, 3vw, 31px); line-height: 1.2
 .topbar-actions { display: flex; flex: 0 0 auto; gap: 9px; }
 .button-share { min-height: 43px; padding: 10px 14px; color: #e4f0f9; background: #ffffff0b; border-color: #ffffff30; border-radius: 9px; font-size: 13px; }
 .button-share:hover { color: #fff; background: #ffffff18; }
+.summary-icon-button { width: 43px; min-width: 43px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
 .section-heading h2, .list-title { margin: 0; font-size: 18px; font-weight: 750; letter-spacing: -.4px; }
 .section-kicker { display: block; margin-bottom: 3px; color: #8795a4; font-size: 10px; font-weight: 750; letter-spacing: 1.1px; text-transform: uppercase; }

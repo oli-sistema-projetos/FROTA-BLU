@@ -36,6 +36,9 @@ h1 { margin: 0; color: #fff; font-size: clamp(24px, 3vw, 31px); line-height: 1.2
 .button { display: inline-flex; min-height: 39px; align-items: center; justify-content: center; gap: 8px; padding: 8px 13px; border: 1px solid transparent; border-radius: 8px; font-weight: 700; transition: .16s ease; }
 .button-accent { min-height: 43px; padding: 10px 16px; color: #122a3a; background: #8be0cf; border-radius: 9px; box-shadow: 0 4px 12px #071a2a3b; font-size: 13px; }
 .button-accent:hover { background: #a4eadc; transform: translateY(-1px); }
+.topbar-actions { display: flex; flex: 0 0 auto; gap: 9px; }
+.button-share { min-height: 43px; padding: 10px 14px; color: #e4f0f9; background: #ffffff0b; border-color: #ffffff30; border-radius: 9px; font-size: 13px; }
+.button-share:hover { color: #fff; background: #ffffff18; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
 .section-heading h2, .list-title { margin: 0; font-size: 18px; font-weight: 750; letter-spacing: -.4px; }
 .section-kicker { display: block; margin-bottom: 3px; color: #8795a4; font-size: 10px; font-weight: 750; letter-spacing: 1.1px; text-transform: uppercase; }
@@ -107,6 +110,14 @@ tbody tr:hover { background: #f8fbfd; }
 .message { min-height: 21px; margin: 10px 0 0; color: #387454; font-size: 12px; }
 .modal-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 16px; background: #14202c70; }
 .modal { width: min(480px, 100%); max-height: min(90vh, 760px); overflow-y: auto; background: #fff; border-radius: 16px; box-shadow: 0 20px 70px #152b3c40; }
+.summary-modal { width: min(740px, 100%); }
+.summary-image-wrap { max-height: 38vh; margin: 0 23px; overflow: auto; background: #f2f5f8; border: 1px solid var(--line); border-radius: 10px; }
+.summary-image { display: block; width: 100%; height: auto; }
+.summary-message { max-height: 128px; margin: 14px 23px 0; padding: 11px 12px; overflow: auto; color: #4f6275; background: #f5f7f9; border-radius: 9px; font-family: inherit; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.summary-actions { flex-wrap: wrap; margin-top: 16px; padding: 15px 23px 22px; }
+.download-summary { text-decoration: none; }
+.whatsapp-button { color: #fff; background: #16845d; }
+.whatsapp-button:hover { background: #11724f; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 21px 23px 15px; }
 .modal-header h2 { margin: 0; font-size: 20px; }
 .modal-header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
@@ -144,14 +155,21 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 @media (max-width: 480px) {
   .page { width: calc(100% - 24px); padding-top: 12px; }
-  .topbar { align-items: center; gap: 8px; min-height: 108px; padding: 17px 13px; }
+  .topbar { align-items: center; flex-wrap: wrap; gap: 10px; min-height: 0; padding: 17px 13px; }
+  .brand { flex: 1 1 100%; }
   .brand { gap: 9px; }
+  .topbar-actions { width: 100%; justify-content: flex-end; }
   .brand-icon { width: 40px; height: 40px; border-radius: 12px; }
   .eyebrow { font-size: 8px; letter-spacing: 1px; }
   h1 { font-size: 20px; }
   .subtitle { margin-top: 4px; font-size: 10px; }
-  .button-accent { width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; font-size: 0; }
-  .button-accent svg { width: 20px; height: 20px; }
+  .button-accent, .button-share { width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; font-size: 0; }
+  .button-accent svg, .button-share svg { width: 20px; height: 20px; }
+  .summary-modal .modal-header { padding: 17px 17px 13px; }
+  .summary-image-wrap { margin-right: 17px; margin-left: 17px; }
+  .summary-message { margin-right: 17px; margin-left: 17px; }
+  .summary-actions { padding: 13px 17px 17px; }
+  .summary-actions > * { flex: 1 1 auto; }
   .section-heading { align-items: flex-start; }
   .updated { padding: 5px 8px; font-size: 10px; }
   .stat-card { min-height: 97px; padding: 14px; }

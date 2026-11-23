@@ -33,6 +33,7 @@ function Icon({ name, size = 18 }) {
     blocked: <><path d="M12 3 2.8 20h18.4L12 3Z" /><path d="M12 9v4m0 3h.01" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4 4" /></>,
     alert: <><path d="M12 3 2.8 20h18.4L12 3Z" /><path d="M12 9v4m0 3h.01" /></>,
+    share: <><path d="M12 16V4m0 0L7 9m5-5 5 5" /><path d="M4 13v6h16v-6" /></>,
     close: <><path d="m18 6-12 12M6 6l12 12" /></>,
     pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>
   };
@@ -55,6 +56,134 @@ function localDateKey(value) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatTrailerLocation(trailer) {
+  return trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio";
+}
+
+function createSummaryMessage(counts, dateLabel) {
+  return [
+    "📊 *FROTA BLU-GASPAR | RESUMO OPERACIONAL*",
+    `📅 ${dateLabel}`,
+    "",
+    "Prezados(as), segue o resumo da operação de hoje:",
+    "",
+    `🚛 Carretas cadastradas: ${counts.total}`,
+    `🔵 Carregadas: ${counts.loaded}`,
+    `🟢 Vazias: ${counts.empty}`,
+    `🔴 Bloqueadas: ${counts.blocked}`,
+    "",
+    "Seguimos acompanhando as operações do pátio e das docas.",
+    "Atenciosamente,",
+    "Equipe FROTA BLU-GASPAR"
+  ].join("\n");
+}
+
+function createSummaryImage(trailers, counts, dateLabel) {
+  const width = 1080;
+  const blockedTrailers = trailers.filter(trailer => trailer.situation === "Bloqueada");
+  const rows = blockedTrailers.slice(0, 12);
+  const displayedRows = Math.max(rows.length, 1) + (blockedTrailers.length > 12 ? 1 : 0);
+  const height = 450 + displayedRows * 54;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Seu navegador não conseguiu criar a imagem.");
+
+  context.fillStyle = "#f2f5f8";
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "#14283e";
+  context.fillRect(0, 0, width, 166);
+  context.fillStyle = "#7de0ce";
+  context.fillRect(60, 40, 5, 76);
+  context.fillStyle = "#ffffff";
+  context.font = "700 34px Segoe UI, Arial, sans-serif";
+  context.fillText("FROTA BLU-GASPAR", 84, 76);
+  context.font = "600 17px Segoe UI, Arial, sans-serif";
+  context.fillStyle = "#bfcedb";
+  context.fillText(`RESUMO DO DIA  ·  ${dateLabel}`, 84, 108);
+
+  const cards = [
+    { label: "CADASTRADAS", value: counts.total, color: "#51677e" },
+    { label: "CARREGADAS", value: counts.loaded, color: "#2377c8" },
+    { label: "VAZIAS", value: counts.empty, color: "#198257" },
+    { label: "BLOQUEADAS", value: counts.blocked, color: "#c44444" }
+  ];
+  cards.forEach((card, index) => {
+    const x = 60 + index * 244;
+    context.fillStyle = "#ffffff";
+    context.fillRect(x, 192, 228, 116);
+    context.fillStyle = "#718094";
+    context.font = "600 13px Segoe UI, Arial, sans-serif";
+    context.fillText(card.label, x + 20, 224);
+    context.fillStyle = card.color;
+    context.font = "700 36px Segoe UI, Arial, sans-serif";
+    context.fillText(String(card.value), x + 20, 278);
+  });
+
+  context.fillStyle = "#20364c";
+  context.font = "700 19px Segoe UI, Arial, sans-serif";
+  context.fillText("Carretas bloqueadas", 60, 354);
+  const rowList = rows.length ? rows : [null];
+  rowList.forEach((trailer, index) => {
+    const y = 376 + index * 54;
+    context.fillStyle = "#ffffff";
+    context.fillRect(60, y, 960, 46);
+    if (!trailer) {
+      context.fillStyle = "#748397";
+      context.font = "500 15px Segoe UI, Arial, sans-serif";
+      context.fillText("Nenhuma carreta bloqueada hoje.", 78, y + 29);
+      return;
+    }
+    context.fillStyle = "#c44444";
+    context.font = "700 16px Segoe UI, Arial, sans-serif";
+    context.fillText(trailer.plate, 78, y + 29);
+    const detail = `${trailer.loadStatus}  ·  ${formatTrailerLocation(trailer)}  ·  Motivo: ${trailer.reason}`;
+    context.fillStyle = "#53677b";
+    context.font = "500 14px Segoe UI, Arial, sans-serif";
+    context.fillText(detail, 270, y + 29, 730);
+  });
+  if (blockedTrailers.length > 12) {
+    const y = 376 + rows.length * 54;
+    context.fillStyle = "#748397";
+    context.font = "500 14px Segoe UI, Arial, sans-serif";
+    context.fillText(`E mais ${blockedTrailers.length - 12} carreta(s) bloqueada(s).`, 78, y + 29);
+  }
+  context.fillStyle = "#82909c";
+  context.font = "500 12px Segoe UI, Arial, sans-serif";
+  context.fillText("FROTA BLU-GASPAR  ·  Resumo gerado pelo sistema", 60, height - 24);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (blob) resolve(blob);
+      else reject(new Error("Não foi possível gerar a imagem do resumo."));
+    }, "image/png");
+  });
+}
+
+function DailySummaryDialog({ summary, onClose, onShare }) {
+  if (!summary) return null;
+  return (
+    <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+      <section className="modal summary-modal" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+        <header className="modal-header">
+          <div><h2 id="summary-title">Resumo do dia</h2><p>Indicadores do dia e detalhes apenas das carretas bloqueadas.</p></div>
+          <button className="close-button" type="button" aria-label="Fechar" onClick={onClose}><Icon name="close" /></button>
+        </header>
+        <div className="summary-image-wrap">
+          <img className="summary-image" src={summary.url} alt="Resumo diário da FROTA BLU-GASPAR com indicadores e carretas bloqueadas" />
+        </div>
+        <pre className="summary-message">{summary.message}</pre>
+        <footer className="modal-actions summary-actions">
+          <button className="button button-muted" type="button" onClick={onClose}>Fechar</button>
+          <a className="button button-muted download-summary" href={summary.url} download={summary.filename}>Baixar imagem</a>
+          <button className="button whatsapp-button" type="button" onClick={onShare}><Icon name="share" /> Compartilhar no WhatsApp</button>
+        </footer>
+      </section>
+    </div>
+  );
 }
 
 function Modal({ dialog, form, setForm, onClose, onSubmit, busy }) {
@@ -140,6 +269,14 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [updatedAt, setUpdatedAt] = useState(null);
   const [today, setToday] = useState(() => localDateKey(new Date()));
+  const [summary, setSummary] = useState(null);
+
+  useEffect(() => {
+    const imageUrl = summary?.url;
+    return () => {
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+    };
+  }, [summary]);
 
   async function refresh() {
     setError("");
@@ -269,6 +406,63 @@ export default function App() {
     }
   }
 
+  async function openDailySummary() {
+    setError("");
+    setNotice("");
+    try {
+      const dateLabel = new Intl.DateTimeFormat("pt-BR", { dateStyle: "full" })
+        .format(new Date(`${today}T12:00:00`));
+      const blob = await createSummaryImage(todayTrailers, counts, dateLabel);
+      const message = createSummaryMessage(counts, dateLabel);
+      setSummary({
+        url: URL.createObjectURL(blob),
+        blob,
+        filename: `resumo-frota-blu-gaspar-${today}.png`,
+        message
+      });
+    } catch (summaryError) {
+      setError(`Não foi possível gerar o resumo: ${summaryError.message}`);
+    }
+  }
+
+  async function shareDailySummary() {
+    if (!summary) return;
+    setError("");
+    try {
+      const imageFile = typeof File === "undefined"
+        ? null
+        : new File([summary.blob], summary.filename, { type: "image/png" });
+      if (imageFile && navigator.share && navigator.canShare?.({ files: [imageFile] })) {
+        await navigator.share({
+          files: [imageFile],
+          title: "Resumo diário — FROTA BLU-GASPAR",
+          text: summary.message
+        });
+        setNotice("Resumo compartilhado. Selecione WhatsApp e o contato na janela de compartilhamento.");
+        return;
+      }
+
+      const downloadLink = document.createElement("a");
+      downloadLink.href = summary.url;
+      downloadLink.download = summary.filename;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+
+      const whatsappLink = document.createElement("a");
+      whatsappLink.href = `https://wa.me/?text=${encodeURIComponent(summary.message)}`;
+      whatsappLink.target = "_blank";
+      whatsappLink.rel = "noopener noreferrer";
+      document.body.appendChild(whatsappLink);
+      whatsappLink.click();
+      whatsappLink.remove();
+      setNotice("Imagem baixada e mensagem aberta no WhatsApp. Anexe o PNG antes de enviar.");
+    } catch (shareError) {
+      if (shareError.name === "AbortError") return;
+      setError(`Não foi possível compartilhar o resumo: ${shareError.message}`);
+    }
+  }
+
   const filters = ["Todas", "Carregada", "Vazia", "Bloqueada"];
   const hasBlockedTrailers = trailers.some(item => item.situation === "Bloqueada");
 
@@ -279,7 +473,10 @@ export default function App() {
           <span className="brand-icon"><Icon name="truck" size={27} /></span>
           <div><span className="eyebrow">OPERAÇÃO · TEMPO REAL</span><h1>FROTA BLU-GASPAR</h1><p className="subtitle">Acompanhamento do pátio e das docas</p></div>
         </div>
-        <button className="button button-accent" type="button" onClick={openNew}><Icon name="plus" /> + Nova Carreta</button>
+        <div className="topbar-actions">
+          <button className="button button-share" type="button" onClick={openDailySummary}><Icon name="share" /> Resumo do dia</button>
+          <button className="button button-accent" type="button" onClick={openNew}><Icon name="plus" /> + Nova Carreta</button>
+        </div>
       </header>
 
       <section aria-labelledby="dashboard-title">
@@ -337,6 +534,7 @@ export default function App() {
         </div>
       </section>
       <p className="message" role="status" aria-live="polite">{notice}</p>
+      <DailySummaryDialog summary={summary} onClose={() => setSummary(null)} onShare={shareDailySummary} />
       <Modal dialog={dialog} form={form} setForm={setForm} onClose={() => setDialog(null)} onSubmit={submitDialog} busy={busy} />
     </main>
   );

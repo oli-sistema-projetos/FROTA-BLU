@@ -17,8 +17,9 @@
 }
 
 * { box-sizing: border-box; }
-body { min-width: 320px; min-height: 100vh; margin: 0; font-size: 14px; letter-spacing: -.08px; }
+body { min-width: 320px; min-height: 100vh; margin: 0; font-size: 14px; letter-spacing: -.08px; text-transform: uppercase; }
 button, input, select { font: inherit; }
+::placeholder { text-transform: uppercase; }
 button { cursor: pointer; }
 .page { width: min(1320px, calc(100% - 56px)); margin: 0 auto; padding: 28px 0 52px; }
 .topbar {

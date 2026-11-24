@@ -117,7 +117,7 @@ function createSummaryMessage(trailers, counts, dateLabel) {
     "Atenciosamente,",
     "Equipe FROTA BLU-GASPAR"
   );
-  return lines.join("\n");
+  return lines.join("\n").toLocaleUpperCase("pt-BR");
 }
 
 function createSummaryImage(trailers, counts, dateLabel) {
@@ -134,6 +134,7 @@ function createSummaryImage(trailers, counts, dateLabel) {
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Seu navegador não conseguiu criar a imagem.");
+  const draw = (text, ...args) => context["fillText"](String(text).toLocaleUpperCase("pt-BR"), ...args);
 
   context.fillStyle = "#f2f5f8";
   context.fillRect(0, 0, width, height);
@@ -143,10 +144,10 @@ function createSummaryImage(trailers, counts, dateLabel) {
   context.fillRect(60, 40, 5, 76);
   context.fillStyle = "#ffffff";
   context.font = "700 34px Segoe UI, Arial, sans-serif";
-  context.fillText("FROTA BLU-GASPAR", 84, 76);
+  draw("FROTA BLU-GASPAR", 84, 76);
   context.font = "600 17px Segoe UI, Arial, sans-serif";
   context.fillStyle = "#bfcedb";
-  context.fillText(`RESUMO DO DIA  ·  ${dateLabel}`, 84, 108);
+  draw(`RESUMO DO DIA  ·  ${dateLabel}`, 84, 108);
 
   const cards = [
     { label: "CADASTRADAS", value: counts.total, color: "#51677e" },
@@ -160,15 +161,15 @@ function createSummaryImage(trailers, counts, dateLabel) {
     context.fillRect(x, 192, 228, 116);
     context.fillStyle = "#718094";
     context.font = "600 13px Segoe UI, Arial, sans-serif";
-    context.fillText(card.label, x + 20, 224);
+    draw(card.label, x + 20, 224);
     context.fillStyle = card.color;
     context.font = "700 36px Segoe UI, Arial, sans-serif";
-    context.fillText(String(card.value), x + 20, 278);
+    draw(String(card.value), x + 20, 278);
   });
 
   context.fillStyle = "#20364c";
   context.font = "700 19px Segoe UI, Arial, sans-serif";
-  context.fillText("Carretas bloqueadas", 60, 354);
+  draw("Carretas bloqueadas", 60, 354);
   const rowList = rows.length ? rows : [null];
   rowList.forEach((trailer, index) => {
     const y = 376 + index * 54;
@@ -177,7 +178,7 @@ function createSummaryImage(trailers, counts, dateLabel) {
       context.fillRect(60, y, 960, 46);
       context.fillStyle = "#748397";
       context.font = "500 15px Segoe UI, Arial, sans-serif";
-      context.fillText("Nenhuma carreta bloqueada hoje.", 78, y + 29);
+      draw("Nenhuma carreta bloqueada hoje.", 78, y + 29);
       return;
     }
     context.fillStyle = "#fff0ef";
@@ -186,23 +187,23 @@ function createSummaryImage(trailers, counts, dateLabel) {
     context.fillRect(60, y, 6, 46);
     context.fillStyle = "#c44444";
     context.font = "700 16px Segoe UI, Arial, sans-serif";
-    context.fillText(trailer.plate, 78, y + 29);
+    draw(trailer.plate, 78, y + 29);
     const detail = `${trailer.loadStatus}  ·  ${formatTrailerLocation(trailer)}  ·  Motivo: ${trailer.reason}`;
     context.fillStyle = "#704442";
     context.font = "500 14px Segoe UI, Arial, sans-serif";
-    context.fillText(detail, 270, y + 29, 730);
+    draw(detail, 270, y + 29, 730);
   });
   if (blockedTrailers.length > 12) {
     const y = 376 + rows.length * 54;
     context.fillStyle = "#748397";
     context.font = "500 14px Segoe UI, Arial, sans-serif";
-    context.fillText(`E mais ${blockedTrailers.length - 12} carreta(s) bloqueada(s).`, 78, y + 29);
+    draw(`E mais ${blockedTrailers.length - 12} carreta(s) bloqueada(s).`, 78, y + 29);
   }
 
   const preventiveSectionY = 376 + blockedDisplayRows * 54;
   context.fillStyle = "#925412";
   context.font = "700 19px Segoe UI, Arial, sans-serif";
-  context.fillText("Carretas em preventiva", 60, preventiveSectionY);
+  draw("Carretas em preventiva", 60, preventiveSectionY);
   const preventiveRowList = preventiveRows.length ? preventiveRows : [null];
   preventiveRowList.forEach((trailer, index) => {
     const y = preventiveSectionY + 22 + index * 54;
@@ -211,7 +212,7 @@ function createSummaryImage(trailers, counts, dateLabel) {
       context.fillRect(60, y, 960, 46);
       context.fillStyle = "#748397";
       context.font = "500 15px Segoe UI, Arial, sans-serif";
-      context.fillText("Nenhuma carreta em preventiva.", 78, y + 29);
+      draw("Nenhuma carreta em preventiva.", 78, y + 29);
       return;
     }
     context.fillStyle = "#fff4df";
@@ -220,21 +221,21 @@ function createSummaryImage(trailers, counts, dateLabel) {
     context.fillRect(60, y, 6, 46);
     context.fillStyle = "#94570d";
     context.font = "700 16px Segoe UI, Arial, sans-serif";
-    context.fillText(trailer.plate, 78, y + 29);
+    draw(trailer.plate, 78, y + 29);
     const detail = `${trailer.loadStatus}  ·  ${formatTrailerLocation(trailer)}  ·  ${formatPreventive(trailer)}`;
     context.fillStyle = "#75552e";
     context.font = "500 14px Segoe UI, Arial, sans-serif";
-    context.fillText(detail, 270, y + 29, 730);
+    draw(detail, 270, y + 29, 730);
   });
   if (preventiveTrailers.length > 12) {
     const y = preventiveSectionY + 22 + preventiveRows.length * 54;
     context.fillStyle = "#748397";
     context.font = "500 14px Segoe UI, Arial, sans-serif";
-    context.fillText(`E mais ${preventiveTrailers.length - 12} carreta(s) em preventiva.`, 78, y + 29);
+    draw(`E mais ${preventiveTrailers.length - 12} carreta(s) em preventiva.`, 78, y + 29);
   }
   context.fillStyle = "#82909c";
   context.font = "500 12px Segoe UI, Arial, sans-serif";
-  context.fillText("FROTA BLU-GASPAR  ·  Resumo gerado pelo sistema", 60, height - 24);
+  draw("FROTA BLU-GASPAR  ·  Resumo gerado pelo sistema", 60, height - 24);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {

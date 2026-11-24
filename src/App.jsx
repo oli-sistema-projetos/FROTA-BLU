@@ -142,19 +142,23 @@ function createSummaryImage(trailers, counts, dateLabel) {
   const rowList = rows.length ? rows : [null];
   rowList.forEach((trailer, index) => {
     const y = 376 + index * 54;
-    context.fillStyle = "#ffffff";
-    context.fillRect(60, y, 960, 46);
     if (!trailer) {
+      context.fillStyle = "#ffffff";
+      context.fillRect(60, y, 960, 46);
       context.fillStyle = "#748397";
       context.font = "500 15px Segoe UI, Arial, sans-serif";
       context.fillText("Nenhuma carreta bloqueada hoje.", 78, y + 29);
       return;
     }
+    context.fillStyle = "#fff0ef";
+    context.fillRect(60, y, 960, 46);
+    context.fillStyle = "#d34742";
+    context.fillRect(60, y, 6, 46);
     context.fillStyle = "#c44444";
     context.font = "700 16px Segoe UI, Arial, sans-serif";
     context.fillText(trailer.plate, 78, y + 29);
     const detail = `${trailer.loadStatus}  ·  ${formatTrailerLocation(trailer)}  ·  Motivo: ${trailer.reason}`;
-    context.fillStyle = "#53677b";
+    context.fillStyle = "#704442";
     context.font = "500 14px Segoe UI, Arial, sans-serif";
     context.fillText(detail, 270, y + 29, 730);
   });

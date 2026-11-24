@@ -84,6 +84,17 @@ function formatPreventive(trailer) {
     : `${value} km ultrapassados`;
 }
 
+function isAvailableEmpty(trailer) {
+  return trailer.loadStatus === "Vazia" && trailer.situation === "Liberada";
+}
+
+function matchesStatusFilter(trailer, filter) {
+  if (filter === "Todas") return true;
+  if (filter === "Bloqueada") return trailer.situation === "Bloqueada";
+  if (filter === "Vazia") return isAvailableEmpty(trailer);
+  return trailer.loadStatus === filter;
+}
+
 function createSummaryMessage(trailers, counts, dateLabel) {
   const preventiveTrailers = trailers.filter(trailer => trailer.preventiveActive);
   const lines = [
@@ -606,23 +617,18 @@ export default function App() {
   const counts = useMemo(() => ({
     total: todayTrailers.length,
     loaded: todayTrailers.filter(item => item.loadStatus === "Carregada").length,
-    empty: todayTrailers.filter(item => item.loadStatus === "Vazia").length,
+    empty: todayTrailers.filter(isAvailableEmpty).length,
     blocked: todayTrailers.filter(item => item.situation === "Bloqueada").length,
     preventive: todayTrailers.filter(item => item.preventiveActive).length,
-    available: todayTrailers.filter(item =>
-      item.loadStatus === "Vazia" &&
-      item.situation === "Liberada"
-    ).length
+    available: todayTrailers.filter(isAvailableEmpty).length
   }), [todayTrailers]);
 
   const visibleTrailers = useMemo(() => {
     const query = search.trim().toLocaleUpperCase("pt-BR");
-    return trailers.filter(item => {
-      const byStatus = activeFilter === "Todas" ||
-        (activeFilter === "Bloqueada" ? item.situation === "Bloqueada" : item.loadStatus === activeFilter);
-      return byStatus && item.plate.includes(query);
-    });
+    return trailers.filter(item => matchesStatusFilter(item, activeFilter) && item.plate.includes(query));
   }, [trailers, activeFilter, search]);
+
+  const availableTrailers = useMemo(() => trailers.filter(isAvailableEmpty), [trailers]);
 
   function openNew() {
     setForm({ ...EMPTY_FORM });
@@ -843,14 +849,8 @@ export default function App() {
         </article>)}
       </section>}
 
-      {trailers.some(item =>
-        item.loadStatus === "Vazia" &&
-        item.situation === "Liberada"
-      ) && <section className="available-trailers" aria-label="Carretas vazias disponíveis" aria-live="polite">
-        {trailers.filter(item =>
-          item.loadStatus === "Vazia" &&
-          item.situation === "Liberada"
-        ).map(trailer => <article className="available-trailer" key={trailer.id}>
+      {availableTrailers.length > 0 && <section className="available-trailers" aria-label="Carretas vazias disponíveis" aria-live="polite">
+        {availableTrailers.map(trailer => <article className="available-trailer" key={trailer.id}>
           <div className="available-main">
             <span className="available-symbol">✓</span>
             <div>

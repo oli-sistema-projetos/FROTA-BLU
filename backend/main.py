@@ -60,7 +60,9 @@ def initialize_database():
                 "createdById" TEXT NOT NULL DEFAULT '',
                 "createdByName" TEXT NOT NULL DEFAULT '',
                 "preventiveActive" BOOLEAN NOT NULL DEFAULT FALSE,
-                "preventiveKm" INTEGER NOT NULL DEFAULT 0
+                "preventiveKm" INTEGER NOT NULL DEFAULT 0,
+                "preventiveType" TEXT NOT NULL DEFAULT 'KM',
+                "preventiveValue" INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -106,6 +108,14 @@ def initialize_database():
                 connection.exec_driver_sql(
                     'ALTER TABLE trailers ADD COLUMN "preventiveKm" INTEGER NOT NULL DEFAULT 0'
                 )
+            if "preventiveType" not in trailer_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE trailers ADD COLUMN \"preventiveType\" TEXT NOT NULL DEFAULT 'KM'"
+                )
+            if "preventiveValue" not in trailer_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "preventiveValue" INTEGER NOT NULL DEFAULT 0'
+                )
         else:
             existing_columns = {
                 row[0] for row in connection.execute(
@@ -133,6 +143,14 @@ def initialize_database():
             if "preventiveKm" not in existing_columns:
                 connection.exec_driver_sql(
                     'ALTER TABLE trailers ADD COLUMN "preventiveKm" INTEGER NOT NULL DEFAULT 0'
+                )
+            if "preventiveType" not in existing_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE trailers ADD COLUMN \"preventiveType\" TEXT NOT NULL DEFAULT 'KM'"
+                )
+            if "preventiveValue" not in existing_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "preventiveValue" INTEGER NOT NULL DEFAULT 0'
                 )
         if engine.dialect.name == "postgresql":
             connection.exec_driver_sql(
@@ -193,6 +211,8 @@ class TrailerCreate(BaseModel):
     reason: str | None = Field(default=None, max_length=100)
     preventiveActive: bool = False
     preventiveKm: int | None = Field(default=None, ge=0, le=9999999)
+    preventiveType: Literal["KM", "DIAS"] = "KM"
+    preventiveValue: int | None = Field(default=None, ge=1, le=9999999)
 
     @field_validator("plate")
     @classmethod
@@ -211,6 +231,8 @@ class TrailerUpdate(BaseModel):
     reason: str | None = Field(default=None, max_length=100)
     preventiveActive: bool | None = None
     preventiveKm: int | None = Field(default=None, ge=0, le=9999999)
+    preventiveType: Literal["KM", "DIAS"] | None = None
+    preventiveValue: int | None = Field(default=None, ge=1, le=9999999)
 
 
 class AuthSetup(BaseModel):
@@ -237,6 +259,13 @@ class AuthUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=40)
     password: str = Field(min_length=6, max_length=128)
     role: Literal["admin", "operador"] = "operador"
+
+
+class AuthUserUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=80)
+    username: str | None = Field(default=None, min_length=3, max_length=40)
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    role: Literal["admin", "operador"] | None = None
 
 
 def password_hash(password: str, salt: str | None = None) -> str:
@@ -432,6 +461,51 @@ def create_user(payload: AuthUserCreate, user: Mapping = Depends(current_user)):
     return {"id": created["id"], "name": created["name"], "username": created["username"], "role": created["role"]}
 
 
+@app.patch("/api/auth/users/{user_id}")
+def update_user(user_id: str, payload: AuthUserUpdate, user: Mapping = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem editar usuários.")
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="Informe ao menos um campo para atualizar.")
+    with database() as connection:
+        row = connection.execute(
+            text("SELECT id, name, username, role FROM app_users WHERE id = :id"),
+            {"id": user_id},
+        ).mappings().first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+        updated = dict(row)
+        if "name" in changes:
+            updated["name"] = changes["name"].strip()
+        if "username" in changes:
+            username = changes["username"].strip().lower()
+            existing = connection.execute(
+                text("SELECT id FROM app_users WHERE username = :username AND id != :id"),
+                {"username": username, "id": user_id},
+            ).first()
+            if existing:
+                raise HTTPException(status_code=409, detail="Este usuário já existe.")
+            updated["username"] = username
+        if "role" in changes:
+            updated["role"] = changes["role"]
+        assignments = {
+            "name": updated["name"],
+            "username": updated["username"],
+            "role": updated["role"],
+        }
+        sql_parts = ['name = :name', 'username = :username', 'role = :role']
+        if changes.get("password"):
+            assignments["passwordHash"] = password_hash(changes["password"])
+            sql_parts.append('"passwordHash" = :passwordHash')
+        assignments["id"] = user_id
+        connection.execute(
+            text(f"UPDATE app_users SET {', '.join(sql_parts)} WHERE id = :id"),
+            assignments,
+        )
+    return {"id": user_id, "name": updated["name"], "username": updated["username"], "role": updated["role"]}
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "database": engine.dialect.name}
@@ -451,8 +525,9 @@ def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)
     data = payload.model_dump()
     if data["preventiveActive"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Somente administradores podem registrar preventiva.")
-    if data["preventiveActive"] and not data["preventiveKm"]:
-        raise HTTPException(status_code=422, detail="Informe quantos quilômetros ultrapassaram.")
+    if data["preventiveActive"] and not data["preventiveValue"]:
+        label = "km ultrapassados" if data["preventiveType"] == "KM" else "dias vencidos"
+        raise HTTPException(status_code=422, detail=f"Informe a quantidade de {label}.")
     dock_number = (data["dockNumber"] or "").strip() if data["location"] == "Doca" else ""
     reason = (data["reason"] or "").strip() if data["situation"] == "Bloqueada" else ""
     if data["location"] == "Doca" and not dock_number:
@@ -472,7 +547,9 @@ def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)
         "createdById": user["id"],
         "createdByName": user["name"],
         "preventiveActive": data["preventiveActive"],
-        "preventiveKm": data["preventiveKm"] or 0,
+        "preventiveKm": (data["preventiveValue"] or 0) if data["preventiveType"] == "KM" else 0,
+        "preventiveType": data["preventiveType"],
+        "preventiveValue": data["preventiveValue"] or 0,
     }
     try:
         with database() as connection:
@@ -480,9 +557,9 @@ def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)
                 text(
                     """
                     INSERT INTO trailers
-                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt", "createdById", "createdByName", "preventiveActive", "preventiveKm")
+                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt", "createdById", "createdByName", "preventiveActive", "preventiveKm", "preventiveType", "preventiveValue")
                     VALUES
-                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt, :createdById, :createdByName, :preventiveActive, :preventiveKm)
+                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt, :createdById, :createdByName, :preventiveActive, :preventiveKm, :preventiveType, :preventiveValue)
                     """
                 ),
                 trailer
@@ -530,10 +607,18 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
             updated["preventiveActive"] = bool(changes["preventiveActive"])
         if "preventiveKm" in changes:
             updated["preventiveKm"] = changes["preventiveKm"] or 0
-        if updated["preventiveActive"] and not updated["preventiveKm"]:
-            raise HTTPException(status_code=422, detail="Informe quantos quilômetros ultrapassaram.")
+        if "preventiveType" in changes:
+            updated["preventiveType"] = changes["preventiveType"]
+        if "preventiveValue" in changes:
+            updated["preventiveValue"] = changes["preventiveValue"] or 0
+        if "preventiveKm" in changes and "preventiveValue" not in changes:
+            updated["preventiveValue"] = updated["preventiveKm"]
+            updated["preventiveType"] = "KM"
+        if updated["preventiveActive"] and not updated["preventiveValue"]:
+            raise HTTPException(status_code=422, detail="Informe o valor vencido da preventiva.")
         if not updated["preventiveActive"]:
             updated["preventiveKm"] = 0
+            updated["preventiveValue"] = 0
 
         columns = {
             "loadStatus": updated["loadStatus"],
@@ -542,7 +627,9 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
             "situation": updated["situation"],
             "reason": updated["reason"],
             "preventiveActive": updated["preventiveActive"],
-            "preventiveKm": updated["preventiveKm"]
+            "preventiveKm": updated["preventiveKm"],
+            "preventiveType": updated["preventiveType"],
+            "preventiveValue": updated["preventiveValue"]
         }
         assignments = ", ".join(f'"{name}" = :{name}' for name in columns)
         connection.execute(

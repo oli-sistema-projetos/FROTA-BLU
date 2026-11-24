@@ -187,6 +187,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .user-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .user-row strong, .user-row small { display: block; }
 .user-row small { margin-top: 2px; color: var(--muted); }
+.user-row-button { width: 100%; cursor: pointer; background: transparent; border: 0; border-bottom: 1px solid var(--line); text-align: left; }
+.user-row-button:hover, .user-row-button.selected { background: #f5f8fb; }
 .users-notice { color: #18734f; font-size: 12px; }
 .users-error { margin-right: 0; margin-left: 0; }
 

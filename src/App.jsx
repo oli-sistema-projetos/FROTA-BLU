@@ -8,7 +8,8 @@ const EMPTY_FORM = {
   situation: "Liberada",
   reason: "",
   preventiveActive: false,
-  preventiveKm: ""
+  preventiveType: "KM",
+  preventiveValue: ""
 };
 
 async function request(path, options) {
@@ -232,7 +233,7 @@ function Modal({ dialog, form, setForm, onClose, onSubmit, busy }) {
       : isBlockAction
         ? `Informe o motivo do bloqueio de ${dialog.trailer.plate}.`
         : isPreventiveAction
-          ? `Informe quantos km a preventiva excedeu em ${dialog.trailer.plate}.`
+          ? `Informe KM ultrapassado ou dias vencidos em ${dialog.trailer.plate}.`
           : `Confirma a saída de ${dialog.trailer.plate}? Ela será removida do controle.`;
 
   function update(key, value) {
@@ -277,7 +278,10 @@ function Modal({ dialog, form, setForm, onClose, onSubmit, busy }) {
           </>}
           {isDockAction && <div className="field"><label htmlFor="action-dock">Número da doca <span>*</span></label><input id="action-dock" autoFocus required maxLength={12} value={form.dockNumber} placeholder="Ex.: 04" onChange={event => update("dockNumber", event.target.value)} /></div>}
           {isBlockAction && <div className="field"><label htmlFor="action-reason">Motivo do bloqueio <span>*</span></label><input id="action-reason" autoFocus required maxLength={100} value={form.reason} placeholder="Ex.: Manutenção, Pneu, Avaria" onChange={event => update("reason", event.target.value)} /></div>}
-          {isPreventiveAction && <div className="field"><label htmlFor="preventive-km">KM ultrapassado <span>*</span></label><input id="preventive-km" type="number" min="1" max="9999999" autoFocus required value={form.preventiveKm} placeholder="Ex.: 250" onChange={event => update("preventiveKm", event.target.value)} /></div>}
+          {isPreventiveAction && <>
+            <div className="field"><label htmlFor="preventive-type">Tipo de vencimento</label><select id="preventive-type" value={form.preventiveType} onChange={event => update("preventiveType", event.target.value)}><option value="KM">KM ultrapassado</option><option value="DIAS">Dias vencidos</option></select></div>
+            <div className="field"><label htmlFor="preventive-value">{form.preventiveType === "KM" ? "KM ultrapassado" : "Dias vencidos"} <span>*</span></label><input id="preventive-value" type="number" min="1" max="9999999" autoFocus required value={form.preventiveValue} placeholder={form.preventiveType === "KM" ? "Ex.: 250" : "Ex.: 7"} onChange={event => update("preventiveValue", event.target.value)} /></div>
+          </>}
           <footer className="modal-actions">
             <button className="button button-muted" type="button" onClick={onClose}>Cancelar</button>
             <button className={`button ${isExit ? "button-danger" : "button-primary"}`} type="submit" disabled={busy}>
@@ -349,6 +353,7 @@ function AuthScreen({ needsSetup, onAuthenticated }) {
 function UsersDialog({ open, onClose }) {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ name: "", username: "", password: "", role: "operador" });
+  const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -366,13 +371,29 @@ function UsersDialog({ open, onClose }) {
     setError("");
     setNotice("");
     try {
+      if (editingId) {
+        const payload = {
+          name: form.name,
+          username: form.username,
+          role: form.role,
+          ...(form.password ? { password: form.password } : {})
+        };
+        const updated = await request(`/api/auth/users/${editingId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload)
+        });
+        setUsers(current => current.map(user => user.id === editingId ? { ...user, ...updated } : user).sort((a, b) => a.name.localeCompare(b.name)));
+        setNotice(`Usuário ${updated.username} atualizado.`);
+      } else {
       const created = await request("/api/auth/users", {
         method: "POST",
         body: JSON.stringify(form)
       });
       setUsers(current => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setForm({ name: "", username: "", password: "", role: "operador" });
       setNotice(`Usuário ${created.username} criado.`);
+      }
+      setForm({ name: "", username: "", password: "", role: "operador" });
+      setEditingId(null);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -381,6 +402,17 @@ function UsersDialog({ open, onClose }) {
   }
 
   if (!open) return null;
+  function startEditing(user) {
+    setEditingId(user.id);
+    setForm({ name: user.name, username: user.username, password: "", role: user.role });
+    setError("");
+    setNotice("");
+  }
+  function cancelEditing() {
+    setEditingId(null);
+    setForm({ name: "", username: "", password: "", role: "operador" });
+    setError("");
+  }
   return (
     <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
       <section className="modal users-modal" role="dialog" aria-modal="true" aria-labelledby="users-title">
@@ -393,15 +425,15 @@ function UsersDialog({ open, onClose }) {
             <div className="field"><label htmlFor="new-user-name">Nome</label><input id="new-user-name" required minLength={2} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></div>
             <div className="form-grid">
               <div className="field"><label htmlFor="new-user-username">Usuário</label><input id="new-user-username" required minLength={3} value={form.username} onChange={event => setForm(current => ({ ...current, username: event.target.value }))} /></div>
-              <div className="field"><label htmlFor="new-user-password">Senha</label><input id="new-user-password" required minLength={6} type="password" value={form.password} onChange={event => setForm(current => ({ ...current, password: event.target.value }))} /></div>
+              <div className="field"><label htmlFor="new-user-password">Senha {editingId ? "(opcional)" : ""}</label><input id="new-user-password" required={!editingId} minLength={6} type="password" value={form.password} onChange={event => setForm(current => ({ ...current, password: event.target.value }))} /></div>
             </div>
             <div className="field"><label htmlFor="new-user-role">Perfil</label><select id="new-user-role" value={form.role} onChange={event => setForm(current => ({ ...current, role: event.target.value }))}><option value="operador">Operador</option><option value="admin">Administrador</option></select></div>
             {error && <div className="error-banner users-error" role="alert">{error}</div>}
             {notice && <p className="users-notice" role="status">{notice}</p>}
-            <footer className="modal-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Criando..." : "Criar usuário"}</button></footer>
+            <footer className="modal-actions">{editingId && <button className="button button-muted" type="button" onClick={cancelEditing}>Cancelar edição</button>}<button className="button button-primary" type="submit" disabled={busy}>{busy ? "Salvando..." : editingId ? "Salvar alterações" : "Criar usuário"}</button></footer>
           </form>
           <div className="users-list">
-            {users.map(user => <div className="user-row" key={user.id}><span><strong>{user.name}</strong><small>{user.username}</small></span><span className={`badge ${user.role === "admin" ? "blocked" : "free"}`}>{user.role}</span></div>)}
+            {users.map(user => <button className={`user-row user-row-button ${editingId === user.id ? "selected" : ""}`} type="button" key={user.id} onClick={() => startEditing(user)}><span><strong>{user.name}</strong><small>{user.username}</small></span><span className={`badge ${user.role === "admin" ? "blocked" : "free"}`}>{user.role}</span></button>)}
           </div>
         </div>
       </section>
@@ -543,9 +575,17 @@ export default function App() {
         await request(`/api/trailers/${dialog.trailer.id}`, { method: "PATCH", body: JSON.stringify({ location: "Doca", dockNumber: form.dockNumber.trim() }) });
         setNotice(`${dialog.trailer.plate} movida para a doca ${form.dockNumber.trim()}.`);
       } else if (dialog.type === "preventive") {
-        const preventiveKm = Number(form.preventiveKm);
-        await request(`/api/trailers/${dialog.trailer.id}`, { method: "PATCH", body: JSON.stringify({ preventiveActive: true, preventiveKm }) });
-        setNotice(`${dialog.trailer.plate} marcada em preventiva por ${preventiveKm} km ultrapassados.`);
+        const preventiveValue = Number(form.preventiveValue);
+        await request(`/api/trailers/${dialog.trailer.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            preventiveActive: true,
+            preventiveType: form.preventiveType,
+            preventiveValue,
+            preventiveKm: form.preventiveType === "KM" ? preventiveValue : 0
+          })
+        });
+        setNotice(`${dialog.trailer.plate} marcada em preventiva por ${preventiveValue} ${form.preventiveType === "KM" ? "km ultrapassados" : "dias vencidos"}.`);
       } else {
         await request(`/api/trailers/${dialog.trailer.id}`, { method: "DELETE" });
         setNotice(`Saída registrada para ${dialog.trailer.plate}.`);
@@ -584,7 +624,11 @@ export default function App() {
       setForm({ ...EMPTY_FORM });
       setDialog({ type: "block", trailer });
     } else if (action === "preventive") {
-      setForm({ ...EMPTY_FORM, preventiveKm: trailer.preventiveKm ? String(trailer.preventiveKm) : "" });
+      setForm({
+        ...EMPTY_FORM,
+        preventiveType: trailer.preventiveType || "KM",
+        preventiveValue: trailer.preventiveValue ? String(trailer.preventiveValue) : (trailer.preventiveKm ? String(trailer.preventiveKm) : "")
+      });
       setDialog({ type: "preventive", trailer });
     } else if (action === "unblock") {
       updateTrailer(trailer, { situation: "Liberada", reason: "" }, `${trailer.plate} desbloqueada.`);
@@ -721,7 +765,7 @@ export default function App() {
             <span className="preventive-symbol">⚠</span>
             <div>
               <p className="preventive-title">Preventiva</p>
-              <div className="preventive-copy"><strong>{trailer.plate}</strong><span> · {trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio"} · {trailer.preventiveKm} km ultrapassados</span></div>
+              <div className="preventive-copy"><strong>{trailer.plate}</strong><span> · {trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio"} · {(trailer.preventiveValue || trailer.preventiveKm || 0)} {(trailer.preventiveType === "DIAS") ? "dias vencidos" : "km ultrapassados"}</span></div>
             </div>
           </div>
           {authUser.role === "admin" && <button className="button preventive-button" type="button" onClick={() => quickAction("preventive", trailer)}>Atualizar</button>}

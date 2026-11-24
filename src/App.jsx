@@ -77,8 +77,16 @@ function getTimeGreeting(date = new Date()) {
   return "Boa noite";
 }
 
-function createSummaryMessage(counts, dateLabel) {
-  return [
+function formatPreventive(trailer) {
+  const value = trailer.preventiveValue || trailer.preventiveKm || 0;
+  return trailer.preventiveType === "DIAS"
+    ? `${value} dias vencidos`
+    : `${value} km ultrapassados`;
+}
+
+function createSummaryMessage(trailers, counts, dateLabel) {
+  const preventiveTrailers = trailers.filter(trailer => trailer.preventiveActive);
+  const lines = [
     "📊 *FROTA BLU-GASPAR | RESUMO OPERACIONAL*",
     `📅 ${dateLabel}`,
     "",
@@ -89,19 +97,34 @@ function createSummaryMessage(counts, dateLabel) {
     `🔵 Carregadas: ${counts.loaded}`,
     `🟢 Vazias: ${counts.empty}`,
     `🔴 Bloqueadas: ${counts.blocked}`,
+    `🟠 Preventivas: ${preventiveTrailers.length}`,
+  ];
+
+  if (preventiveTrailers.length) {
+    lines.push("", "⚠️ *Carretas em preventiva:*");
+    preventiveTrailers.forEach(trailer => {
+      lines.push(`• ${trailer.plate} — ${formatTrailerLocation(trailer)} — ${formatPreventive(trailer)}`);
+    });
+  }
+
+  lines.push(
     "",
     "Seguimos acompanhando as operações do pátio e das docas.",
     "Atenciosamente,",
     "Equipe FROTA BLU-GASPAR"
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 function createSummaryImage(trailers, counts, dateLabel) {
   const width = 1080;
   const blockedTrailers = trailers.filter(trailer => trailer.situation === "Bloqueada");
+  const preventiveTrailers = trailers.filter(trailer => trailer.preventiveActive);
   const rows = blockedTrailers.slice(0, 12);
-  const displayedRows = Math.max(rows.length, 1) + (blockedTrailers.length > 12 ? 1 : 0);
-  const height = 450 + displayedRows * 54;
+  const preventiveRows = preventiveTrailers.slice(0, 12);
+  const blockedDisplayRows = Math.max(rows.length, 1) + (blockedTrailers.length > 12 ? 1 : 0);
+  const preventiveDisplayRows = preventiveRows.length ? preventiveRows.length : 1;
+  const height = 450 + blockedDisplayRows * 54 + preventiveDisplayRows * 54 + 70;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -170,6 +193,40 @@ function createSummaryImage(trailers, counts, dateLabel) {
     context.fillStyle = "#748397";
     context.font = "500 14px Segoe UI, Arial, sans-serif";
     context.fillText(`E mais ${blockedTrailers.length - 12} carreta(s) bloqueada(s).`, 78, y + 29);
+  }
+
+  const preventiveSectionY = 376 + blockedDisplayRows * 54;
+  context.fillStyle = "#925412";
+  context.font = "700 19px Segoe UI, Arial, sans-serif";
+  context.fillText("Carretas em preventiva", 60, preventiveSectionY);
+  const preventiveRowList = preventiveRows.length ? preventiveRows : [null];
+  preventiveRowList.forEach((trailer, index) => {
+    const y = preventiveSectionY + 22 + index * 54;
+    if (!trailer) {
+      context.fillStyle = "#ffffff";
+      context.fillRect(60, y, 960, 46);
+      context.fillStyle = "#748397";
+      context.font = "500 15px Segoe UI, Arial, sans-serif";
+      context.fillText("Nenhuma carreta em preventiva.", 78, y + 29);
+      return;
+    }
+    context.fillStyle = "#fff4df";
+    context.fillRect(60, y, 960, 46);
+    context.fillStyle = "#df8b21";
+    context.fillRect(60, y, 6, 46);
+    context.fillStyle = "#94570d";
+    context.font = "700 16px Segoe UI, Arial, sans-serif";
+    context.fillText(trailer.plate, 78, y + 29);
+    const detail = `${trailer.loadStatus}  ·  ${formatTrailerLocation(trailer)}  ·  ${formatPreventive(trailer)}`;
+    context.fillStyle = "#75552e";
+    context.font = "500 14px Segoe UI, Arial, sans-serif";
+    context.fillText(detail, 270, y + 29, 730);
+  });
+  if (preventiveTrailers.length > 12) {
+    const y = preventiveSectionY + 22 + preventiveRows.length * 54;
+    context.fillStyle = "#748397";
+    context.font = "500 14px Segoe UI, Arial, sans-serif";
+    context.fillText(`E mais ${preventiveTrailers.length - 12} carreta(s) em preventiva.`, 78, y + 29);
   }
   context.fillStyle = "#82909c";
   context.font = "500 12px Segoe UI, Arial, sans-serif";
@@ -542,7 +599,8 @@ export default function App() {
     total: todayTrailers.length,
     loaded: todayTrailers.filter(item => item.loadStatus === "Carregada").length,
     empty: todayTrailers.filter(item => item.loadStatus === "Vazia").length,
-    blocked: todayTrailers.filter(item => item.situation === "Bloqueada").length
+    blocked: todayTrailers.filter(item => item.situation === "Bloqueada").length,
+    preventive: todayTrailers.filter(item => item.preventiveActive).length
   }), [todayTrailers]);
 
   const visibleTrailers = useMemo(() => {
@@ -644,7 +702,7 @@ export default function App() {
       const dateLabel = new Intl.DateTimeFormat("pt-BR", { dateStyle: "full" })
         .format(new Date(`${today}T12:00:00`));
       const blob = await createSummaryImage(todayTrailers, counts, dateLabel);
-      const message = createSummaryMessage(counts, dateLabel);
+      const message = createSummaryMessage(todayTrailers, counts, dateLabel);
       setSummary({
         url: URL.createObjectURL(blob),
         blob,

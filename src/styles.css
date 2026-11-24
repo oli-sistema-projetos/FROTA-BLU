@@ -110,9 +110,11 @@ tbody tr:hover { background: #f8fbfd; }
 .location { color: #394957; font-size: 12px; white-space: nowrap; }
 .location-icon { display: inline-flex; margin-right: 5px; color: #8795a3; vertical-align: -3px; }
 .reason { color: #a33a36; }
-.actions { display: flex; min-width: 242px; flex-wrap: wrap; gap: 5px; }
+.actions { display: flex; min-width: 170px; flex-wrap: wrap; gap: 5px; }
 .icon-button { min-height: 30px; padding: 5px 8px; color: #415364; background: #fff; border: 1px solid #e4e9ee; border-radius: 7px; font-size: 11px; font-weight: 650; transition: .16s ease; }
 .icon-button:hover { color: #1a5e95; background: #f3f8fc; border-color: #cbdceb; }
+.icon-only { display: inline-grid; width: 30px; padding: 0; place-items: center; }
+.edit-button { color: #315d7c; }
 .exit-button { color: #a52e2e; }
 .exit-button:hover { color: #a52e2e; background: #fff4f3; border-color: #f0c7c5; }
 .empty-state { display: flex; min-height: 180px; flex-direction: column; align-items: center; justify-content: center; padding: 35px 20px; color: var(--muted); text-align: center; }
@@ -205,7 +207,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .filter { flex: 0 0 auto; background: #f2f5f8; }
   .filter[aria-pressed="true"] { background: #1d3853; }
   .tools { padding: 12px 16px; }
-  .actions { min-width: 220px; }
+  .actions { min-width: 170px; }
   td, th { padding-right: 12px; padding-left: 12px; }
 }
 @media (max-width: 480px) {

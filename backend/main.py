@@ -576,9 +576,7 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=400, detail="Informe ao menos um campo para atualizar.")
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Somente administradores podem usar ações rápidas.")
-    if ("preventiveActive" in changes or "preventiveKm" in changes) and user["role"] != "admin":
+    if user["role"] != "admin" and any(key in changes for key in ("preventiveActive", "preventiveKm", "preventiveType", "preventiveValue")):
         raise HTTPException(status_code=403, detail="Somente administradores podem alterar preventivas.")
     if any(changes.get(key) is None for key in ("loadStatus", "location", "situation") if key in changes):
         raise HTTPException(status_code=422, detail="Status, local e situação não podem ficar vazios.")
@@ -645,8 +643,6 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
 
 @app.delete("/api/trailers/{trailer_id}", status_code=204)
 def delete_trailer(trailer_id: str, user: Mapping = Depends(current_user)):
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Somente administradores podem dar saída em carretas.")
     with database() as connection:
         result = connection.execute(
             text("DELETE FROM trailers WHERE id = :id"),

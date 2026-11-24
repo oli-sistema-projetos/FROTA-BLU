@@ -562,6 +562,14 @@ export default function App() {
   }, [authUser]);
 
   useEffect(() => {
+    if (!authUser) return undefined;
+    const pollInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 3000);
+    return () => window.clearInterval(pollInterval);
+  }, [authUser]);
+
+  useEffect(() => {
     let midnightTimer;
     const refreshDay = () => setToday(localDateKey(new Date()));
     const scheduleMidnightRefresh = () => {

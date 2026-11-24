@@ -88,13 +88,6 @@ function isAvailableEmpty(trailer) {
   return trailer.loadStatus === "Vazia" && trailer.situation === "Liberada";
 }
 
-function matchesStatusFilter(trailer, filter) {
-  if (filter === "Todas") return true;
-  if (filter === "Bloqueada") return trailer.situation === "Bloqueada";
-  if (filter === "Vazia") return isAvailableEmpty(trailer);
-  return trailer.loadStatus === filter;
-}
-
 function createSummaryMessage(trailers, counts, dateLabel) {
   const preventiveTrailers = trailers.filter(trailer => trailer.preventiveActive);
   const lines = [
@@ -625,7 +618,11 @@ export default function App() {
 
   const visibleTrailers = useMemo(() => {
     const query = search.trim().toLocaleUpperCase("pt-BR");
-    return trailers.filter(item => matchesStatusFilter(item, activeFilter) && item.plate.includes(query));
+    return trailers.filter(item => {
+      const byStatus = activeFilter === "Todas" ||
+        (activeFilter === "Bloqueada" ? item.situation === "Bloqueada" : item.loadStatus === activeFilter);
+      return byStatus && item.plate.includes(query);
+    });
   }, [trailers, activeFilter, search]);
 
   const availableTrailers = useMemo(() => trailers.filter(isAvailableEmpty), [trailers]);

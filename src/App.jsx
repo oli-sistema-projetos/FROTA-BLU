@@ -608,7 +608,11 @@ export default function App() {
     loaded: todayTrailers.filter(item => item.loadStatus === "Carregada").length,
     empty: todayTrailers.filter(item => item.loadStatus === "Vazia").length,
     blocked: todayTrailers.filter(item => item.situation === "Bloqueada").length,
-    preventive: todayTrailers.filter(item => item.preventiveActive).length
+    preventive: todayTrailers.filter(item => item.preventiveActive).length,
+    available: todayTrailers.filter(item =>
+      item.loadStatus === "Vazia" &&
+      item.situation === "Liberada"
+    ).length
   }), [todayTrailers]);
 
   const visibleTrailers = useMemo(() => {
@@ -816,6 +820,7 @@ export default function App() {
           <StatCard kind="blocked" label="Bloqueadas" value={counts.blocked} icon="blocked" />
         </div>
         <p className="daily-note">Os indicadores zeram à meia-noite. A lista e os registros permanecem salvos.</p>
+        <p className="available-summary">Disponíveis para uso: <strong>{counts.available}</strong> vazia(s) liberada(s).</p>
       </section>
 
       {hasBlockedTrailers && <section className="alerts" aria-label="Alertas de carretas bloqueadas" aria-live="polite">
@@ -835,6 +840,24 @@ export default function App() {
             </div>
           </div>
           {authUser.role === "admin" && <button className="button preventive-button" type="button" onClick={() => quickAction("preventive", trailer)}>Atualizar</button>}
+        </article>)}
+      </section>}
+
+      {trailers.some(item =>
+        item.loadStatus === "Vazia" &&
+        item.situation === "Liberada"
+      ) && <section className="available-trailers" aria-label="Carretas vazias disponíveis" aria-live="polite">
+        {trailers.filter(item =>
+          item.loadStatus === "Vazia" &&
+          item.situation === "Liberada"
+        ).map(trailer => <article className="available-trailer" key={trailer.id}>
+          <div className="available-main">
+            <span className="available-symbol">✓</span>
+            <div>
+              <p className="available-title">Carreta vazia disponível</p>
+              <div className="available-copy"><strong>{trailer.plate}</strong><span> · {trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio"} · Liberada para uso</span></div>
+            </div>
+          </div>
         </article>)}
       </section>}
 

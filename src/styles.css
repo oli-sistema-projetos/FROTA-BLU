@@ -64,6 +64,16 @@ h1 { margin: 0; color: #fff; font-size: clamp(24px, 3vw, 31px); line-height: 1.2
 .alert-copy strong { color: #672724; }
 .alert-button { min-height: 33px; padding: 5px 10px; color: #922f2c; background: #fffafa; border-color: #e8b5b2; font-size: 12px; white-space: nowrap; }
 .alert-button:hover { background: #fff; }
+.preventives { margin-top: 9px; }
+.preventive { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 9px; padding: 15px 18px; background: #fff4df; border: 1px solid #f2d19d; border-left: 4px solid #df8b21; border-radius: 12px; }
+.preventive-main { display: flex; align-items: flex-start; gap: 11px; }
+.preventive-symbol { margin-top: 1px; color: #b86a14; font-size: 18px; line-height: 1; }
+.preventive-title { margin: 0 0 2px; color: #925412; font-size: 14px; font-weight: 750; }
+.preventive-copy { color: #75552e; font-size: 13px; }
+.preventive-copy strong { color: #70400f; }
+.preventive-button { min-height: 33px; padding: 5px 10px; color: #85510f; background: #fffaf2; border-color: #edc98d; font-size: 12px; white-space: nowrap; }
+.preventive-action { color: #94570d; border-color: #edc98d; }
+.preventive-action:hover { color: #7b4508; background: #fff7e8; border-color: #dfb56f; }
 .fleet { margin-top: 24px; overflow: hidden; background: #fff; border: 1px solid #e5eaf0; border-radius: 15px; box-shadow: var(--shadow); }
 .fleet-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
 .fleet-title-wrap { display: flex; align-items: center; gap: 11px; }

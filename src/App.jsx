@@ -6,7 +6,9 @@ const EMPTY_FORM = {
   location: "Pátio",
   dockNumber: "",
   situation: "Liberada",
-  reason: ""
+  reason: "",
+  preventiveActive: false,
+  preventiveKm: ""
 };
 
 async function request(path, options) {
@@ -220,15 +222,18 @@ function Modal({ dialog, form, setForm, onClose, onSubmit, busy }) {
   const needsReason = isNew && form.situation === "Bloqueada";
   const isDockAction = dialog.type === "dock";
   const isBlockAction = dialog.type === "block";
+  const isPreventiveAction = dialog.type === "preventive";
   const isExit = dialog.type === "exit";
-  const title = isNew ? "Nova carreta" : isDockAction ? "Mover para doca" : isBlockAction ? "Bloquear carreta" : "Dar saída";
+  const title = isNew ? "Nova carreta" : isDockAction ? "Mover para doca" : isBlockAction ? "Bloquear carreta" : isPreventiveAction ? "Preventiva" : "Dar saída";
   const copy = isNew
     ? "Preencha os dados para adicionar ao controle."
     : isDockAction
       ? `Informe a doca de destino para ${dialog.trailer.plate}.`
       : isBlockAction
         ? `Informe o motivo do bloqueio de ${dialog.trailer.plate}.`
-        : `Confirma a saída de ${dialog.trailer.plate}? Ela será removida do controle.`;
+        : isPreventiveAction
+          ? `Informe quantos km a preventiva excedeu em ${dialog.trailer.plate}.`
+          : `Confirma a saída de ${dialog.trailer.plate}? Ela será removida do controle.`;
 
   function update(key, value) {
     setForm(current => ({ ...current, [key]: value }));
@@ -272,10 +277,11 @@ function Modal({ dialog, form, setForm, onClose, onSubmit, busy }) {
           </>}
           {isDockAction && <div className="field"><label htmlFor="action-dock">Número da doca <span>*</span></label><input id="action-dock" autoFocus required maxLength={12} value={form.dockNumber} placeholder="Ex.: 04" onChange={event => update("dockNumber", event.target.value)} /></div>}
           {isBlockAction && <div className="field"><label htmlFor="action-reason">Motivo do bloqueio <span>*</span></label><input id="action-reason" autoFocus required maxLength={100} value={form.reason} placeholder="Ex.: Manutenção, Pneu, Avaria" onChange={event => update("reason", event.target.value)} /></div>}
+          {isPreventiveAction && <div className="field"><label htmlFor="preventive-km">KM ultrapassado <span>*</span></label><input id="preventive-km" type="number" min="1" max="9999999" autoFocus required value={form.preventiveKm} placeholder="Ex.: 250" onChange={event => update("preventiveKm", event.target.value)} /></div>}
           <footer className="modal-actions">
             <button className="button button-muted" type="button" onClick={onClose}>Cancelar</button>
             <button className={`button ${isExit ? "button-danger" : "button-primary"}`} type="submit" disabled={busy}>
-              {busy ? "Aguarde..." : isNew ? "Cadastrar carreta" : isDockAction ? "Mover para doca" : isBlockAction ? "Bloquear" : "Dar saída"}
+              {busy ? "Aguarde..." : isNew ? "Cadastrar carreta" : isDockAction ? "Mover para doca" : isBlockAction ? "Bloquear" : isPreventiveAction ? "Salvar preventiva" : "Dar saída"}
             </button>
           </footer>
         </form>
@@ -536,6 +542,10 @@ export default function App() {
       } else if (dialog.type === "dock") {
         await request(`/api/trailers/${dialog.trailer.id}`, { method: "PATCH", body: JSON.stringify({ location: "Doca", dockNumber: form.dockNumber.trim() }) });
         setNotice(`${dialog.trailer.plate} movida para a doca ${form.dockNumber.trim()}.`);
+      } else if (dialog.type === "preventive") {
+        const preventiveKm = Number(form.preventiveKm);
+        await request(`/api/trailers/${dialog.trailer.id}`, { method: "PATCH", body: JSON.stringify({ preventiveActive: true, preventiveKm }) });
+        setNotice(`${dialog.trailer.plate} marcada em preventiva por ${preventiveKm} km ultrapassados.`);
       } else {
         await request(`/api/trailers/${dialog.trailer.id}`, { method: "DELETE" });
         setNotice(`Saída registrada para ${dialog.trailer.plate}.`);
@@ -573,6 +583,9 @@ export default function App() {
     } else if (action === "block") {
       setForm({ ...EMPTY_FORM });
       setDialog({ type: "block", trailer });
+    } else if (action === "preventive") {
+      setForm({ ...EMPTY_FORM, preventiveKm: trailer.preventiveKm ? String(trailer.preventiveKm) : "" });
+      setDialog({ type: "preventive", trailer });
     } else if (action === "unblock") {
       updateTrailer(trailer, { situation: "Liberada", reason: "" }, `${trailer.plate} desbloqueada.`);
     } else if (action === "exit") {
@@ -702,6 +715,19 @@ export default function App() {
         </article>)}
       </section>}
 
+      {trailers.some(item => item.preventiveActive) && <section className="preventives" aria-label="Carretas em preventiva" aria-live="polite">
+        {trailers.filter(item => item.preventiveActive).map(trailer => <article className="preventive" key={trailer.id}>
+          <div className="preventive-main">
+            <span className="preventive-symbol">⚠</span>
+            <div>
+              <p className="preventive-title">Preventiva</p>
+              <div className="preventive-copy"><strong>{trailer.plate}</strong><span> · {trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio"} · {trailer.preventiveKm} km ultrapassados</span></div>
+            </div>
+          </div>
+          {authUser.role === "admin" && <button className="button preventive-button" type="button" onClick={() => quickAction("preventive", trailer)}>Atualizar</button>}
+        </article>)}
+      </section>}
+
       <section className="fleet" aria-labelledby="fleet-title">
         <div className="fleet-header">
           <div className="fleet-title-wrap"><span className="fleet-heading-icon"><Icon name="fleet" /></span><div><h2 className="list-title" id="fleet-title">Carretas no pátio</h2><span className="fleet-subtitle">Acompanhe e atualize cada veículo</span></div><span className="count-pill">{visibleTrailers.length}</span></div>
@@ -725,10 +751,13 @@ export default function App() {
                 <td><span className={`badge ${trailer.situation === "Bloqueada" ? "blocked" : "free"}`}>{trailer.situation}</span>{trailer.situation === "Bloqueada" && trailer.reason && <span className="subtext reason">{trailer.reason}</span>}</td>
                 <td><span className="subtext creator-name">{trailer.createdByName || "Usuário não identificado"}</span></td>
                 <td><div className="actions">
+                  {authUser.role === "admin" && <>
                   <button className="icon-button" type="button" onClick={() => quickAction("load", trailer)}>{trailer.loadStatus === "Carregada" ? "Marcar vazia" : "Marcar carregada"}</button>
                   <button className="icon-button" type="button" onClick={() => quickAction("location", trailer)}>{trailer.location === "Doca" ? "Mover p/ pátio" : "Mover p/ doca"}</button>
                   <button className="icon-button" type="button" onClick={() => quickAction(trailer.situation === "Bloqueada" ? "unblock" : "block", trailer)}>{trailer.situation === "Bloqueada" ? "Desbloquear" : "Bloquear"}</button>
+                  <button className="icon-button preventive-action" type="button" onClick={() => quickAction("preventive", trailer)}>Preventiva</button>
                   <button className="icon-button exit-button" type="button" onClick={() => quickAction("exit", trailer)}>Dar saída</button>
+                  </>}
                 </div></td>
               </tr>)}
             </tbody>

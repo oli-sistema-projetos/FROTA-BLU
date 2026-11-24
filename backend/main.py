@@ -58,7 +58,9 @@ def initialize_database():
                 reason TEXT NOT NULL DEFAULT '',
                 "createdAt" TEXT NOT NULL,
                 "createdById" TEXT NOT NULL DEFAULT '',
-                "createdByName" TEXT NOT NULL DEFAULT ''
+                "createdByName" TEXT NOT NULL DEFAULT '',
+                "preventiveActive" BOOLEAN NOT NULL DEFAULT FALSE,
+                "preventiveKm" INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -96,6 +98,14 @@ def initialize_database():
                 connection.exec_driver_sql(
                     'ALTER TABLE trailers ADD COLUMN "createdByName" TEXT NOT NULL DEFAULT \'\''
                 )
+            if "preventiveActive" not in trailer_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "preventiveActive" BOOLEAN NOT NULL DEFAULT FALSE'
+                )
+            if "preventiveKm" not in trailer_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "preventiveKm" INTEGER NOT NULL DEFAULT 0'
+                )
         else:
             existing_columns = {
                 row[0] for row in connection.execute(
@@ -115,6 +125,14 @@ def initialize_database():
             if "createdByName" not in existing_columns:
                 connection.exec_driver_sql(
                     'ALTER TABLE trailers ADD COLUMN "createdByName" TEXT NOT NULL DEFAULT \'\''
+                )
+            if "preventiveActive" not in existing_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "preventiveActive" BOOLEAN NOT NULL DEFAULT FALSE'
+                )
+            if "preventiveKm" not in existing_columns:
+                connection.exec_driver_sql(
+                    'ALTER TABLE trailers ADD COLUMN "preventiveKm" INTEGER NOT NULL DEFAULT 0'
                 )
         if engine.dialect.name == "postgresql":
             connection.exec_driver_sql(
@@ -173,6 +191,8 @@ class TrailerCreate(BaseModel):
     dockNumber: str | None = Field(default=None, max_length=12)
     situation: Literal["Liberada", "Bloqueada"]
     reason: str | None = Field(default=None, max_length=100)
+    preventiveActive: bool = False
+    preventiveKm: int | None = Field(default=None, ge=0, le=9999999)
 
     @field_validator("plate")
     @classmethod
@@ -189,6 +209,8 @@ class TrailerUpdate(BaseModel):
     dockNumber: str | None = Field(default=None, max_length=12)
     situation: Literal["Liberada", "Bloqueada"] | None = None
     reason: str | None = Field(default=None, max_length=100)
+    preventiveActive: bool | None = None
+    preventiveKm: int | None = Field(default=None, ge=0, le=9999999)
 
 
 class AuthSetup(BaseModel):
@@ -427,6 +449,10 @@ def list_trailers():
 @app.post("/api/trailers", status_code=201)
 def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)):
     data = payload.model_dump()
+    if data["preventiveActive"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem registrar preventiva.")
+    if data["preventiveActive"] and not data["preventiveKm"]:
+        raise HTTPException(status_code=422, detail="Informe quantos quilômetros ultrapassaram.")
     dock_number = (data["dockNumber"] or "").strip() if data["location"] == "Doca" else ""
     reason = (data["reason"] or "").strip() if data["situation"] == "Bloqueada" else ""
     if data["location"] == "Doca" and not dock_number:
@@ -445,6 +471,8 @@ def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "createdById": user["id"],
         "createdByName": user["name"],
+        "preventiveActive": data["preventiveActive"],
+        "preventiveKm": data["preventiveKm"] or 0,
     }
     try:
         with database() as connection:
@@ -452,9 +480,9 @@ def create_trailer(payload: TrailerCreate, user: Mapping = Depends(current_user)
                 text(
                     """
                     INSERT INTO trailers
-                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt", "createdById", "createdByName")
+                        (id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt", "createdById", "createdByName", "preventiveActive", "preventiveKm")
                     VALUES
-                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt, :createdById, :createdByName)
+                        (:id, :plate, :loadStatus, :location, :dockNumber, :situation, :reason, :createdAt, :createdById, :createdByName, :preventiveActive, :preventiveKm)
                     """
                 ),
                 trailer
@@ -471,6 +499,10 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=400, detail="Informe ao menos um campo para atualizar.")
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem usar ações rápidas.")
+    if ("preventiveActive" in changes or "preventiveKm" in changes) and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem alterar preventivas.")
     if any(changes.get(key) is None for key in ("loadStatus", "location", "situation") if key in changes):
         raise HTTPException(status_code=422, detail="Status, local e situação não podem ficar vazios.")
     with database() as connection:
@@ -494,13 +526,23 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
                 raise HTTPException(status_code=422, detail="O motivo do bloqueio é obrigatório.")
         else:
             updated["reason"] = ""
+        if "preventiveActive" in changes:
+            updated["preventiveActive"] = bool(changes["preventiveActive"])
+        if "preventiveKm" in changes:
+            updated["preventiveKm"] = changes["preventiveKm"] or 0
+        if updated["preventiveActive"] and not updated["preventiveKm"]:
+            raise HTTPException(status_code=422, detail="Informe quantos quilômetros ultrapassaram.")
+        if not updated["preventiveActive"]:
+            updated["preventiveKm"] = 0
 
         columns = {
             "loadStatus": updated["loadStatus"],
             "location": updated["location"],
             "dockNumber": updated["dockNumber"],
             "situation": updated["situation"],
-            "reason": updated["reason"]
+            "reason": updated["reason"],
+            "preventiveActive": updated["preventiveActive"],
+            "preventiveKm": updated["preventiveKm"]
         }
         assignments = ", ".join(f'"{name}" = :{name}' for name in columns)
         connection.execute(
@@ -516,6 +558,8 @@ def update_trailer(trailer_id: str, payload: TrailerUpdate, user: Mapping = Depe
 
 @app.delete("/api/trailers/{trailer_id}", status_code=204)
 def delete_trailer(trailer_id: str, user: Mapping = Depends(current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Somente administradores podem dar saída em carretas.")
     with database() as connection:
         result = connection.execute(
             text("DELETE FROM trailers WHERE id = :id"),

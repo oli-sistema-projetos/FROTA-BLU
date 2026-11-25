@@ -634,7 +634,11 @@ export default function App() {
     setError("");
     try {
       if (dialog.type === "new") {
-        await request("/api/trailers", { method: "POST", body: JSON.stringify(form) });
+        const payload = {
+          ...form,
+          preventiveValue: form.preventiveValue === "" ? null : Number(form.preventiveValue)
+        };
+        await request("/api/trailers", { method: "POST", body: JSON.stringify(payload) });
         setNotice(`Carreta ${form.plate.trim().toLocaleUpperCase("pt-BR")} cadastrada.`);
       } else if (dialog.type === "edit") {
         await request(`/api/trailers/${dialog.trailer.id}`, {

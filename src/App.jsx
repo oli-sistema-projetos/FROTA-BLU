@@ -507,6 +507,7 @@ export default function App() {
   const [trailers, setTrailers] = useState([]);
   const [activeFilter, setActiveFilter] = useState("Todas");
   const [search, setSearch] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
   const [dialog, setDialog] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
@@ -572,30 +573,20 @@ export default function App() {
   }, [authUser]);
 
   useEffect(() => {
-    let midnightTimer;
-    const refreshDay = () => setToday(localDateKey(new Date()));
-    const scheduleMidnightRefresh = () => {
-      const now = new Date();
-      const midnight = new Date(now);
-      midnight.setHours(24, 0, 0, 0);
-      midnightTimer = window.setTimeout(() => {
-        refreshDay();
-        scheduleMidnightRefresh();
-      }, midnight.getTime() - now.getTime() + 50);
+    const refreshDay = () => {
+      const currentDay = localDateKey(new Date());
+      setToday(previous => previous === currentDay ? previous : currentDay);
     };
+    const dayTimer = window.setInterval(refreshDay, 30000);
     const synchronizeDay = () => {
-      if (document.visibilityState === "visible") {
-        window.clearTimeout(midnightTimer);
-        refreshDay();
-        scheduleMidnightRefresh();
-      }
+      if (document.visibilityState === "visible") refreshDay();
     };
 
-    scheduleMidnightRefresh();
+    refreshDay();
     window.addEventListener("focus", synchronizeDay);
     document.addEventListener("visibilitychange", synchronizeDay);
     return () => {
-      window.clearTimeout(midnightTimer);
+      window.clearInterval(dayTimer);
       window.removeEventListener("focus", synchronizeDay);
       document.removeEventListener("visibilitychange", synchronizeDay);
     };
@@ -618,9 +609,10 @@ export default function App() {
     return trailers.filter(item => {
       const byStatus = activeFilter === "Todas" ||
         (activeFilter === "Bloqueada" ? item.situation === "Bloqueada" : item.loadStatus === activeFilter);
-      return byStatus && item.plate.includes(query);
+      const byDate = !selectedDate || localDateKey(item.createdAt) === selectedDate;
+      return byStatus && byDate && item.plate.includes(query);
     });
-  }, [trailers, activeFilter, search]);
+  }, [trailers, activeFilter, selectedDate, search]);
 
   function openNew() {
     setForm({ ...EMPTY_FORM });
@@ -854,7 +846,9 @@ export default function App() {
         </div>
         <div className="tools">
           <label className="search"><Icon name="search" /><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por placa..." aria-label="Buscar por placa" /></label>
-          <span className="search-hint">Pesquise pela placa da carreta</span>
+          <label className="date-filter"><span>Data</span><input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} aria-label="Filtrar marcações por data" /></label>
+          {selectedDate && <button className="date-clear" type="button" onClick={() => setSelectedDate("")} aria-label="Limpar filtro de data" title="Limpar data">×</button>}
+          <span className="search-hint">Pesquise pela placa ou escolha uma data</span>
         </div>
         {error && <div className="error-banner" role="alert">{error}</div>}
         <div className="table-wrap">

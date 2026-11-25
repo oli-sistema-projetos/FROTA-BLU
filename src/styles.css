@@ -86,12 +86,17 @@ h1 { margin: 0; color: #fff; font-size: clamp(24px, 3vw, 31px); line-height: 1.2
 .filter { padding: 7px 11px; color: #647488; background: transparent; border: 0; border-radius: 7px; font-size: 12px; font-weight: 650; transition: .16s ease; }
 .filter[aria-pressed="true"] { color: #fff; background: #1d3853; box-shadow: 0 2px 5px #1d385328; }
 .filter:hover:not([aria-pressed="true"]) { background: #e7edf2; }
-.tools { display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 11px 22px; background: #fff; border-bottom: 1px solid var(--line); }
+.tools { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 62px; padding: 11px 22px; background: #fff; border-bottom: 1px solid var(--line); }
 .search { position: relative; display: block; width: min(360px, 100%); }
 .search svg { position: absolute; top: 50%; left: 11px; color: #8794a0; transform: translateY(-50%); pointer-events: none; }
 .search input, .field input, .field select { width: 100%; min-height: 40px; padding: 8px 11px; color: #17283b; background: #fff; border: 1px solid #e0e6ec; border-radius: 8px; outline: none; font-size: 13px; }
 .search input { padding-left: 36px; background: #f9fbfc; }
 .search input:focus, .field input:focus, .field select:focus { border-color: #68a3d0; box-shadow: 0 0 0 3px #1769aa17; }
+.date-filter { display: inline-flex; align-items: center; gap: 7px; color: #667789; font-size: 12px; font-weight: 650; }
+.date-filter input { width: 155px; min-height: 40px; padding: 8px 10px; color: #17283b; background: #f9fbfc; border: 1px solid #e0e6ec; border-radius: 8px; outline: none; font-size: 13px; }
+.date-filter input:focus { border-color: #68a3d0; box-shadow: 0 0 0 3px #1769aa17; }
+.date-clear { min-height: 30px; padding: 0 9px; color: #647488; background: #f3f6f8; border: 1px solid #e0e6ec; border-radius: 7px; font-size: 16px; line-height: 1; }
+.date-clear:hover { color: #a52e2e; background: #fff4f3; border-color: #f0c7c5; }
 .search-hint { color: #98a3ae; font-size: 11px; }
 .error-banner { margin: 14px 22px 0; padding: 11px 13px; color: #9c302d; background: #fff0ef; border: 1px solid #f1cbc8; border-radius: 8px; font-size: 13px; }
 .table-wrap { overflow-x: auto; }

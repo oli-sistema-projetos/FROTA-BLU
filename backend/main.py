@@ -38,6 +38,28 @@ else:
     engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 
+TRAILERS_SCHEMA = """
+(
+    id TEXT PRIMARY KEY,
+    plate TEXT NOT NULL,
+    "loadStatus" TEXT NOT NULL CHECK ("loadStatus" IN ('Carregada', 'Vazia')),
+    location TEXT NOT NULL CHECK (location IN ('Pátio', 'Doca')),
+    "dockNumber" TEXT NOT NULL DEFAULT '',
+    situation TEXT NOT NULL CHECK (situation IN ('Liberada', 'Bloqueada')),
+    reason TEXT NOT NULL DEFAULT '',
+    "createdAt" TEXT NOT NULL,
+    "createdById" TEXT NOT NULL DEFAULT '',
+    "createdByName" TEXT NOT NULL DEFAULT '',
+    "preventiveActive" BOOLEAN NOT NULL DEFAULT FALSE,
+    "preventiveKm" INTEGER NOT NULL DEFAULT 0,
+    "preventiveType" TEXT NOT NULL DEFAULT 'KM',
+    "preventiveValue" INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+TRAILER_COLUMNS = 'id, plate, "loadStatus", location, "dockNumber", situation, reason, "createdAt", "createdById", "createdByName", "preventiveActive", "preventiveKm", "preventiveType", "preventiveValue"'
+
+
 @contextmanager
 def database():
     with engine.begin() as connection:
@@ -46,26 +68,7 @@ def database():
 
 def initialize_database():
     with database() as connection:
-        connection.exec_driver_sql(
-            """
-            CREATE TABLE IF NOT EXISTS trailers (
-                id TEXT PRIMARY KEY,
-                plate TEXT NOT NULL UNIQUE,
-                "loadStatus" TEXT NOT NULL CHECK ("loadStatus" IN ('Carregada', 'Vazia')),
-                location TEXT NOT NULL CHECK (location IN ('Pátio', 'Doca')),
-                "dockNumber" TEXT NOT NULL DEFAULT '',
-                situation TEXT NOT NULL CHECK (situation IN ('Liberada', 'Bloqueada')),
-                reason TEXT NOT NULL DEFAULT '',
-                "createdAt" TEXT NOT NULL,
-                "createdById" TEXT NOT NULL DEFAULT '',
-                "createdByName" TEXT NOT NULL DEFAULT '',
-                "preventiveActive" BOOLEAN NOT NULL DEFAULT FALSE,
-                "preventiveKm" INTEGER NOT NULL DEFAULT 0,
-                "preventiveType" TEXT NOT NULL DEFAULT 'KM',
-                "preventiveValue" INTEGER NOT NULL DEFAULT 0
-            )
-            """
-        )
+        connection.exec_driver_sql(f"CREATE TABLE IF NOT EXISTS trailers {TRAILERS_SCHEMA}")
         connection.exec_driver_sql(
             """
             CREATE TABLE IF NOT EXISTS app_users (
@@ -161,6 +164,61 @@ def initialize_database():
                 )
                 """
             )
+
+
+def allow_duplicate_plates():
+    def quoted(name):
+        return '"' + name.replace('"', '""') + '"'
+
+    with database() as connection:
+        if engine.dialect.name == "sqlite":
+            indexes = connection.exec_driver_sql("PRAGMA index_list(trailers)").mappings().all()
+            has_unique_plate = False
+            for index in indexes:
+                if not index["unique"]:
+                    continue
+                columns = connection.exec_driver_sql(
+                    f'PRAGMA index_info({quoted(index["name"])})'
+                ).mappings().all()
+                if len(columns) == 1 and columns[0]["name"] == "plate":
+                    has_unique_plate = True
+                    break
+            if not has_unique_plate:
+                return
+            connection.exec_driver_sql("ALTER TABLE trailers RENAME TO trailers_with_unique_plate")
+            connection.exec_driver_sql(f"CREATE TABLE trailers {TRAILERS_SCHEMA}")
+            connection.exec_driver_sql(
+                f"INSERT INTO trailers ({TRAILER_COLUMNS}) SELECT {TRAILER_COLUMNS} FROM trailers_with_unique_plate"
+            )
+            connection.exec_driver_sql("DROP TABLE trailers_with_unique_plate")
+            return
+
+        constraints = connection.execute(
+            text(
+                """
+                SELECT c.conname
+                FROM pg_constraint c
+                JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+                WHERE c.conrelid = 'trailers'::regclass AND c.contype = 'u' AND a.attname = 'plate'
+                """
+            )
+        ).scalars().all()
+        for name in constraints:
+            connection.exec_driver_sql(f"ALTER TABLE trailers DROP CONSTRAINT {quoted(name)}")
+
+        indexes = connection.execute(
+            text(
+                """
+                SELECT i.relname
+                FROM pg_index x
+                JOIN pg_class i ON i.oid = x.indexrelid
+                JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = ANY(x.indkey)
+                WHERE x.indrelid = 'trailers'::regclass AND x.indisunique AND a.attname = 'plate'
+                """
+            )
+        ).scalars().all()
+        for name in indexes:
+            connection.exec_driver_sql(f"DROP INDEX IF EXISTS {quoted(name)}")
 
 
 def migrate_legacy_sqlite_data():
@@ -321,6 +379,7 @@ def trailer_dict(row: Mapping) -> dict:
 
 
 initialize_database()
+allow_duplicate_plates()
 migrate_legacy_sqlite_data()
 app = FastAPI(title="FROTA BLU-GASPAR", version="1.0.0")
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const EMPTY_FORM = {
   plate: "",
@@ -97,7 +97,7 @@ function createSummaryMessage(trailers, counts, dateLabel) {
     `📅 ${dateLabel}`,
     "",
     `${getTimeGreeting()}!`,
-    "Segue o resumo da operação de hoje:",
+    "Segue o resumo da operação do dia:",
     "",
     `🚛 Carretas cadastradas: ${counts.total}`,
     `🔵 Carregadas: ${counts.loaded}`,
@@ -180,7 +180,7 @@ function createSummaryImage(trailers, counts, dateLabel) {
       context.fillRect(60, y, 960, 46);
       context.fillStyle = "#748397";
       context.font = "500 15px Segoe UI, Arial, sans-serif";
-      draw("Nenhuma carreta bloqueada hoje.", 78, y + 29);
+      draw("Nenhuma carreta bloqueada no dia.", 78, y + 29);
       return;
     }
     context.fillStyle = "#fff0ef";
@@ -507,7 +507,7 @@ export default function App() {
   const [trailers, setTrailers] = useState([]);
   const [activeFilter, setActiveFilter] = useState("Todas");
   const [search, setSearch] = useState("");
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState(() => localDateKey(new Date()));
   const [dialog, setDialog] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
@@ -518,6 +518,7 @@ export default function App() {
   const [today, setToday] = useState(() => localDateKey(new Date()));
   const [summary, setSummary] = useState(null);
   const [usersDialog, setUsersDialog] = useState(false);
+  const previousToday = useRef(today);
 
   useEffect(() => {
     async function initializeAuth() {
@@ -592,17 +593,24 @@ export default function App() {
     };
   }, []);
 
-  const todayTrailers = useMemo(
-    () => trailers.filter(item => localDateKey(item.createdAt) === today),
-    [trailers, today]
+  useEffect(() => {
+    if (previousToday.current === today) return;
+    setSelectedDate(current => current === previousToday.current ? today : current);
+    previousToday.current = today;
+  }, [today]);
+
+  const activeDate = selectedDate || today;
+  const dayTrailers = useMemo(
+    () => trailers.filter(item => localDateKey(item.createdAt) === activeDate),
+    [trailers, activeDate]
   );
   const counts = useMemo(() => ({
-    total: todayTrailers.length,
-    loaded: todayTrailers.filter(item => item.loadStatus === "Carregada").length,
-    empty: todayTrailers.filter(isAvailableEmpty).length,
-    blocked: todayTrailers.filter(item => item.situation === "Bloqueada").length,
-    preventive: todayTrailers.filter(item => item.preventiveActive).length
-  }), [todayTrailers]);
+    total: dayTrailers.length,
+    loaded: dayTrailers.filter(item => item.loadStatus === "Carregada").length,
+    empty: dayTrailers.filter(isAvailableEmpty).length,
+    blocked: dayTrailers.filter(item => item.situation === "Bloqueada").length,
+    preventive: dayTrailers.filter(item => item.preventiveActive).length
+  }), [dayTrailers]);
 
   const visibleTrailers = useMemo(() => {
     const query = search.trim().toLocaleUpperCase("pt-BR");
@@ -707,13 +715,13 @@ export default function App() {
     setNotice("");
     try {
       const dateLabel = new Intl.DateTimeFormat("pt-BR", { dateStyle: "full" })
-        .format(new Date(`${today}T12:00:00`));
-      const blob = await createSummaryImage(todayTrailers, counts, dateLabel);
-      const message = createSummaryMessage(todayTrailers, counts, dateLabel);
+        .format(new Date(`${activeDate}T12:00:00`));
+      const blob = await createSummaryImage(dayTrailers, counts, dateLabel);
+      const message = createSummaryMessage(dayTrailers, counts, dateLabel);
       setSummary({
         url: URL.createObjectURL(blob),
         blob,
-        filename: `resumo-frota-blu-gaspar-${today}.png`,
+        filename: `resumo-frota-blu-gaspar-${activeDate}.png`,
         message
       });
     } catch (summaryError) {
@@ -760,7 +768,7 @@ export default function App() {
   }
 
   const filters = ["Todas", "Carregada", "Vazia", "Bloqueada"];
-  const hasBlockedTrailers = trailers.some(item => item.situation === "Bloqueada");
+  const hasBlockedTrailers = dayTrailers.some(item => item.situation === "Bloqueada");
 
   async function logout() {
     try {
@@ -814,18 +822,18 @@ export default function App() {
           <StatCard kind="empty" label="Vazias" value={counts.empty} icon="empty" />
           <StatCard kind="blocked" label="Bloqueadas" value={counts.blocked} icon="blocked" />
         </div>
-        <p className="daily-note">Os indicadores zeram à meia-noite. A lista e os registros permanecem salvos.</p>
+        <p className="daily-note">A Data vem preenchida com hoje e acompanha a virada do dia. Escolha outra data para consultar dias anteriores; bloqueadas e preventivas seguem a data escolhida.</p>
       </section>
 
       {hasBlockedTrailers && <section className="alerts" aria-label="Alertas de carretas bloqueadas" aria-live="polite">
-        {trailers.filter(item => item.situation === "Bloqueada").map(trailer => <article className="alert" key={trailer.id}>
+        {dayTrailers.filter(item => item.situation === "Bloqueada").map(trailer => <article className="alert" key={trailer.id}>
           <div className="alert-main"><span className="alert-symbol"><Icon name="alert" /></span><div><p className="alert-title">Carreta bloqueada</p><div className="alert-copy"><strong>{trailer.plate}</strong><span> · {trailer.location === "Doca" ? `Doca ${trailer.dockNumber}` : "Pátio"} · Motivo: {trailer.reason}</span></div></div></div>
           <button className="button alert-button" type="button" onClick={() => quickAction("unblock", trailer)}>Desbloquear</button>
         </article>)}
       </section>}
 
-      {trailers.some(item => item.preventiveActive) && <section className="preventives" aria-label="Carretas em preventiva" aria-live="polite">
-        {trailers.filter(item => item.preventiveActive).map(trailer => <article className="preventive" key={trailer.id}>
+      {dayTrailers.some(item => item.preventiveActive) && <section className="preventives" aria-label="Carretas em preventiva" aria-live="polite">
+        {dayTrailers.filter(item => item.preventiveActive).map(trailer => <article className="preventive" key={trailer.id}>
           <div className="preventive-main">
             <span className="preventive-symbol">⚠</span>
             <div>
@@ -846,8 +854,8 @@ export default function App() {
         </div>
         <div className="tools">
           <label className="search"><Icon name="search" /><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por placa..." aria-label="Buscar por placa" /></label>
-          <label className="date-filter"><span>Data</span><input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} aria-label="Filtrar marcações por data" /></label>
-          {selectedDate && <button className="date-clear" type="button" onClick={() => setSelectedDate("")} aria-label="Limpar filtro de data" title="Limpar data">×</button>}
+          <label className="date-filter"><span>Data</span><input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value || today)} aria-label="Filtrar marcações por data" /></label>
+          {selectedDate !== today && <button className="date-clear" type="button" onClick={() => setSelectedDate(today)} aria-label="Voltar para hoje" title="Voltar para hoje">×</button>}
           <span className="search-hint">Pesquise pela placa ou escolha uma data</span>
         </div>
         {error && <div className="error-banner" role="alert">{error}</div>}

@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import SpreadsheetReconciliationDialog from "./SpreadsheetReconciliation.jsx";
+import { readSpreadsheet, normalizePlate, platesFromCell, detectPlateColumn, detectFilialColumn, detectLaunchDateColumn, detectRemarcarColumn, detectPneuColumn } from "./SpreadsheetReconciliation.jsx";
 
 const EMPTY_FORM = {
   plate: "",
@@ -518,6 +520,22 @@ export default function App() {
   const [today, setToday] = useState(() => localDateKey(new Date()));
   const [summary, setSummary] = useState(null);
   const [usersDialog, setUsersDialog] = useState(false);
+  const [sheetDialog, setSheetDialog] = useState(false);
+  const [sheetConfig, setSheetConfig] = useState({ plateColumn: "", sheetName: "", colunaRemarcar: "", colunaPneu: "", colunaFilial: "", colunaDataLancamento: "" });
+  const [sheetResult, setSheetResult] = useState({
+    planilhaPlacas: [],
+    trailersNoPatio: [],
+    naoConferidas: [],
+    totalNoPatio: 0,
+    totalNaPlanilha: 0,
+    totalNaoConferidas: 0,
+    totalRemarcar: 0,
+    checkedAt: null,
+    error: "",
+    loading: false,
+    dismissedPlates: [],
+  });
+  const [dismissedPlates, setDismissedPlates] = useState(new Set());
   const previousToday = useRef(today);
 
   useEffect(() => {
@@ -598,6 +616,25 @@ export default function App() {
     setSelectedDate(current => current === previousToday.current ? today : current);
     previousToday.current = today;
   }, [today]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("frota_sheet_config");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSheetConfig({
+          plateColumn: parsed.plateColumn || "",
+          sheetName: parsed.sheetName || "",
+          colunaRemarcar: parsed.colunaRemarcar || "",
+          colunaPneu: parsed.colunaPneu || "",
+          colunaFilial: parsed.colunaFilial || "",
+          colunaDataLancamento: parsed.colunaDataLancamento || "",
+        });
+      }
+    } catch {
+      // ignora config salva inválida
+    }
+  }, []);
 
   const activeDate = selectedDate || today;
   const dayTrailers = useMemo(
@@ -771,6 +808,104 @@ export default function App() {
     }
   }
 
+  async function saveSheetConfig(config) {
+    setSheetConfig(current => ({ ...current, ...config, file: config.file || null }));
+    try {
+      const persist = {
+        plateColumn: config.plateColumn,
+        sheetName: config.sheetName || "",
+        colunaRemarcar: config.colunaRemarcar || "",
+        colunaPneu: config.colunaPneu || "",
+        colunaFilial: config.colunaFilial || "",
+        colunaDataLancamento: config.colunaDataLancamento || "",
+      };
+      localStorage.setItem("frota_sheet_config", JSON.stringify(persist));
+    } catch {
+      // ignora falha ao persistir config
+    }
+  }
+
+  async function runSheetReconciliation(input) {
+    setSheetResult(current => ({ ...current, loading: true, error: "" }));
+    try {
+      const { rows } = await readSpreadsheet({ file: input.file, sheetName: input.sheetName });
+      const headers = rows.length ? Object.keys(rows[0]) : [];
+      const resolveColumn = (configured, detector) => configured && headers.includes(configured) ? configured : detector(headers);
+      const plateColumn = resolveColumn(input.plateColumn, detectPlateColumn);
+      const filialColumn = resolveColumn(input.colunaFilial, detectFilialColumn);
+      const dataColumn = resolveColumn(input.colunaDataLancamento, detectLaunchDateColumn);
+      const remarcarColumn = resolveColumn(input.colunaRemarcar, detectRemarcarColumn);
+      const pneuColumn = resolveColumn(input.colunaPneu, detectPneuColumn);
+      const placasPlanilha = new Set(rows.flatMap(row => platesFromCell(row[plateColumn])));
+      const remarcarMap = {};
+      const pneuMap = {};
+      const filialMap = {};
+      const dataMap = {};
+      rows.forEach(row => {
+        const plates = platesFromCell(row[plateColumn]);
+        if (!plates.length) return;
+        const valueRemarcar = remarcarColumn ? row[remarcarColumn] : "";
+        const valuePneu = pneuColumn ? row[pneuColumn] : "";
+        const valueFilial = filialColumn ? row[filialColumn] : "";
+        const valueData = dataColumn ? row[dataColumn] : "";
+        plates.forEach(plate => {
+          if (valueRemarcar !== undefined && valueRemarcar !== "") remarcarMap[plate] = valueRemarcar;
+          if (valuePneu !== undefined && valuePneu !== "") pneuMap[plate] = valuePneu;
+          if (valueFilial !== undefined && valueFilial !== "") filialMap[plate] = valueFilial;
+          if (valueData !== undefined && valueData !== "") dataMap[plate] = valueData;
+        });
+      });
+      const trailersNoPatio = trailers
+        .filter(trailer => trailer.location === "Pátio")
+        .map(trailer => {
+          const plate = normalizePlate(trailer.plate);
+          return {
+            ...trailer,
+            remarcar: remarcarMap[plate] || "",
+            pneu: pneuMap[plate] || "",
+            filial: filialMap[plate] || "",
+            dataLancamento: dataMap[plate] || "",
+          };
+        });
+      const naoConferidas = trailersNoPatio
+        .filter(trailer => !placasPlanilha.has(normalizePlate(trailer.plate)))
+        .filter(trailer => !dismissedPlates.has(normalizePlate(trailer.plate)));
+      setSheetResult({
+        planilhaPlacas: Array.from(placasPlanilha),
+        trailersNoPatio,
+        naoConferidas,
+        totalNoPatio: trailersNoPatio.length,
+        totalNaPlanilha: placasPlanilha.size,
+        totalNaoConferidas: naoConferidas.length,
+        totalRemarcar: naoConferidas.filter(t => t.remarcar).length,
+        checkedAt: new Date(),
+        error: "",
+        loading: false,
+        dismissedPlates: Array.from(dismissedPlates),
+      });
+    } catch (runError) {
+      setSheetResult(current => ({
+        ...current,
+        loading: false,
+        error: runError.message || "Não foi possível conferir a planilha.",
+      }));
+    }
+  }
+
+  function dismissSheetPlate(plate) {
+    const normalized = normalizePlate(plate);
+    setDismissedPlates(current => {
+      const next = new Set(current);
+      next.add(normalized);
+      return next;
+    });
+    setSheetResult(current => ({
+      ...current,
+      naoConferidas: current.naoConferidas.filter(trailer => normalizePlate(trailer.plate) !== normalized),
+      totalNaoConferidas: Math.max(0, current.totalNaoConferidas - 1),
+    }));
+  }
+
   const filters = ["Todas", "Carregada", "Vazia", "Bloqueada"];
   const hasBlockedTrailers = dayTrailers.some(item => item.situation === "Bloqueada");
 
@@ -811,6 +946,15 @@ export default function App() {
           </button>
           {authUser.role === "admin" && <button className="button button-share" type="button" onClick={() => setUsersDialog(true)}>Usuários</button>}
           <button className="button button-share user-button" type="button" title="Sair" onClick={logout}><span>{authUser.name}</span></button>
+          <button
+            className="button button-share"
+            type="button"
+            title="Importar/conferir planilha (Excel/CSV)"
+            aria-label="Importar planilha de carretas"
+            onClick={() => setSheetDialog(true)}
+          >
+            📋
+          </button>
           <button className="button button-accent" type="button" onClick={openNew}><Icon name="plus" /> + Nova Carreta</button>
         </div>
       </header>
@@ -847,6 +991,19 @@ export default function App() {
           </div>
           {authUser.role === "admin" && <button className="button preventive-button" type="button" onClick={() => quickAction("preventive", trailer)}>Atualizar</button>}
         </article>)}
+      </section>}
+
+      {sheetResult.totalNaoConferidas > 0 && <section className="alerts" aria-label="Carretas no pátio faltam cadastrar" aria-live="polite">
+        <div className="alert-main">
+          <span className="alert-symbol"><Icon name="alert" /></span>
+          <div>
+            <p className="alert-title">Carretas no pátio faltam cadastrar</p>
+            <div className="alert-copy"><strong>{sheetResult.totalNaoConferidas}</strong> carreta(s) no pátio falta(m) cadastrar na planilha.</div>
+          </div>
+        </div>
+        <div className="actions" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button className="button alert-button" type="button" onClick={() => setSheetDialog(true)}>Ver detalhes</button>
+        </div>
       </section>}
 
       <section className="fleet" aria-labelledby="fleet-title">
@@ -887,6 +1044,16 @@ export default function App() {
       <p className="message" role="status" aria-live="polite">{notice}</p>
       {authUser.role === "admin" && <UsersDialog open={usersDialog} onClose={() => setUsersDialog(false)} />}
       <DailySummaryDialog summary={summary} onClose={() => setSummary(null)} onShare={shareDailySummary} />
+      <SpreadsheetReconciliationDialog
+        open={sheetDialog}
+        onClose={() => setSheetDialog(false)}
+        config={sheetConfig}
+        result={sheetResult}
+        dismissedPlates={dismissedPlates}
+        onSaveConfig={saveSheetConfig}
+        onRunReconciliation={runSheetReconciliation}
+        onDismissPlate={dismissSheetPlate}
+      />
       <Modal dialog={dialog} form={form} setForm={setForm} onClose={() => setDialog(null)} onSubmit={submitDialog} busy={busy} />
     </main>
   );

@@ -200,6 +200,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .users-notice { color: #18734f; font-size: 12px; }
 .users-error { margin-right: 0; margin-left: 0; }
 
+.sheet-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 20; text-align: center; }
+.sheet-empty-icon { display: grid; width: 44px; height: 44px; margin-bottom: 11px; place-items: center; color: #14845a; background: #e9f6ef; border-radius: 13px; }
+.sheet-empty-title { margin-bottom: 4px; color: #14845a; font-size: 14px; font-weight: 800; }
+.sheet-empty-hint { color: #748397; font-size: 12px; }
+
 @media (max-width: 780px) {
   .page { width: min(100% - 28px, 680px); padding-top: 16px; }
   .topbar { min-height: 116px; padding: 22px 20px; border-radius: 15px; }
